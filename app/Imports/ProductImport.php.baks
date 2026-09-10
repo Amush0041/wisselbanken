@@ -1,0 +1,166 @@
+<?php
+
+namespace App\Imports;
+
+use App\Models\Color;
+use App\Models\ColorEffect;
+use Illuminate\Support\Str;
+use App\Models\Division;
+use App\Models\Finish;
+use App\Models\Manufacturer;
+use App\Models\PaintType;
+use App\Models\Product; 
+use App\Models\ProductVariation;
+use App\Models\Size;
+use App\Models\Specification;
+use App\Models\Thickness;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
+use Maatwebsite\Excel\Concerns\ToCollection;
+use Maatwebsite\Excel\Concerns\WithHeadingRow;
+
+class ProductImport implements ToCollection, WithHeadingRow
+{
+    /**
+     * @param Collection $collection
+     */
+    public function collection(Collection $collection)
+    {
+        $product_id = ''; 
+        foreach ($collection as $row) { 
+          
+            // Check or create Division
+            $division = Division::where('code', $row['division'])->first();
+             
+            // Check or create Specification 
+            $specification_slug = $this->generateUniqueSlug(Specification::class, trim($row['specification']));
+            $specification = Specification::updateOrCreate(
+                ['specification_number' => $row['specification']],
+                ['division_id' => $division->id, 'material_type' => $row['material'], 'slug' => $specification_slug, 'status' => 1]
+            );
+            // Check or create Specification 
+
+            $manufacturer_slug = $this->generateUniqueSlug(Manufacturer::class, trim($row['manufacturer']));
+            $manufacturer = Manufacturer::updateOrCreate(
+                ['name' => $row['manufacturer']],
+                ['slug' => $manufacturer_slug, 'status' => 1]
+            );
+
+
+            // Process multiple sizes with unique slug
+            $size_slug = $this->generateUniqueSlug(Size::class, trim($row['size']));
+            $sizeid = Size::updateOrCreate(
+                ['name' => $row['size']],
+                ['slug' => $size_slug, 'status' => 1]
+            ); 
+            
+            // Process multiple thicknesses with unique slug
+            $thickness_slug = $this->generateUniqueSlug(Thickness::class, trim($row['thickness']));
+            $thicknesses = Thickness::updateOrCreate(
+                ['name' => $row['thickness']],
+                ['slug' => $thickness_slug, 'status' => 1]
+            ); 
+            
+        
+
+            // Process multiple finishes with unique slugs
+            $finish_slug = $this->generateUniqueSlug(Finish::class, trim($row['finish']));
+            $finishes = Finish::updateOrCreate(
+                ['name' => $row['finish']],
+                ['slug' => $finish_slug, 'status' => 1]
+            ); 
+
+            // Save Paint Types
+            $paint_type_slug = $this->generateUniqueSlug(PaintType::class, trim($row['paint_type']));
+            $paint_type = PaintType::updateOrCreate(
+                ['name' => $row['paint_type']],
+                ['slug' => $paint_type_slug, 'status' => 1]
+            ); 
+           
+
+            // Save Colors (individually for each paint type)
+            $color_ids = [];
+            $colorNames = collect(explode(',', $row['color']))->map('trim')->unique()->toArray();
+                 foreach ($colorNames as $colorName) {
+                    if (!empty($colorName)) {
+                        $color = Color::firstOrCreate(
+                            ['name' => $colorName, 'paint_type_id' => $paint_type->id],
+                            ['slug' => $this->generateUniqueSlug(Color::class, $colorName), 'status' => 1]
+                        );
+                        $color_ids[] = $color->id;
+                    }
+                } 
+            // Save Color Effects (Independent of Paint Types & Colors)
+            $color_effect_id_slug = $this->generateUniqueSlug(ColorEffect::class, trim($row['color_effect']));
+            $color_effect_id = ColorEffect::updateOrCreate(
+                ['name' => $row['color_effect']],
+                ['slug' => $color_effect_id_slug, 'status' => 1]
+            ); 
+          
+
+
+
+            // Ensure unique slug for Product
+            $product_name = trim($row['product']);
+            $product_slug = $this->generateUniqueSlug(Product::class, $product_name); 
+            if($row['division'] && $row['specification'] && $row['material'] && $row['manufacturer'] && $row['product']){
+                // Create Product
+               
+                $product = Product::updateOrCreate(
+                    [
+                        'name'             => $row['product'] ?? '',
+                        'division_id'      => $division->id,
+                        'specification_id' => $specification->id,
+                    ],
+                    [
+                        'user_id'             => Auth::user()->id,
+                        'material_type_id'    => $specification->id,
+                        'manufacturer_id'     => $manufacturer->id,
+                        'product_description' => $row['description'],
+                        'slug'                => $product_slug,
+                        'status'              => 1,
+                    ]
+                );
+
+                $product_id = $product->id;
+            }
+
+            
+            ProductVariation::firstOrCreate(
+                [
+                    'product_id'    => $product_id,
+                    'user_id'       =>  Auth::user()->id,
+                    'size'          => $sizeid,
+                    'thickness'     => $thicknesses,
+                    'finish'        => $finishes,
+                    'paint_type'    => $paint_type,
+                    'color'         => $color_ids,
+                    'color_effect'  => $color_effect_id,
+                    'pricing'       => $row['pricing'] ?? 0,
+                ]
+            );
+           
+
+            // Attach Sizes
+            
+        
+        }
+    }
+
+    private function generateUniqueSlug($model, $name)
+    {
+        $slug = Str::slug($name);
+        $original_slug = $slug;
+        $count = 1;
+
+        // Check if slug already exists
+        while ($model::where('slug', $slug)->exists()) {
+            $slug = $original_slug . '-' . $count;
+            $count++;
+        }
+
+        return $slug;
+    }
+
+     
+}

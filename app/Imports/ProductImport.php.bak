@@ -1,0 +1,178 @@
+<?php
+
+namespace App\Imports;
+
+use App\Models\Color;
+use App\Models\ColorEffect;
+use Illuminate\Support\Str;
+use App\Models\Division;
+use App\Models\Finish;
+use App\Models\Manufacturer;
+use App\Models\PaintType;
+use App\Models\Product;
+use App\Models\ProductColor;
+use App\Models\ProductColorEffect;
+use App\Models\ProductFinish;
+use App\Models\ProductPaintType;
+use App\Models\ProductSize;
+use App\Models\ProductThickness;
+use App\Models\Size;
+use App\Models\Specification;
+use App\Models\Thickness;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
+use Maatwebsite\Excel\Concerns\ToCollection;
+use Maatwebsite\Excel\Concerns\WithHeadingRow;
+
+class ProductImport implements ToCollection, WithHeadingRow
+{
+    /**
+     * @param Collection $collection
+     */
+    public function collection(Collection $collection)
+    {
+        $product_id = '';
+
+        dd($collection);
+        foreach ($collection as $row) { 
+            
+            // Check or create Division
+            $division = Division::where('code', $row['division'])->first();
+
+            // Check or create Specification 
+            $specification_slug = $this->generateUniqueSlug(Specification::class, trim($row['specification']));
+            $specification = Specification::updateOrCreate(
+                ['specification_number' => $row['specification']],
+                ['division_id' => $division->id, 'material_type' => $row['material'], 'slug' => $specification_slug, 'status' => 1]
+            );
+            // Check or create Specification 
+
+            $manufacturer_slug = $this->generateUniqueSlug(Manufacturer::class, trim($row['manufacturer']));
+            $manufacturer = Manufacturer::updateOrCreate(
+                ['name' => $row['manufacturer']],
+                ['slug' => $manufacturer_slug, 'status' => 1]
+            );
+            // Process multiple sizes with unique slug
+            $size_ids = collect(explode(',', $row['size']))
+                ->map(function ($size) {
+                    $size = trim($size);
+                    $slug = $this->generateUniqueSlug(Size::class, $size);
+                    return Size::firstOrCreate(
+                        ['name' => $size],
+                        ['slug' => $slug, 'status' => 1]
+                    )->id;
+                })
+                ->toArray();
+
+            // Process multiple thicknesses with unique slug
+            $thickness_ids = collect(explode(',', $row['thickness']))
+                ->map(function ($thickness) {
+                    $thickness = trim($thickness);
+                    $slug = $this->generateUniqueSlug(Thickness::class, $thickness);
+                    return Thickness::firstOrCreate(
+                        ['name' => $thickness],
+                        ['slug' => $slug, 'status' => 1]
+                    )->id;
+                })
+                ->toArray();
+
+            // Process multiple finishes with unique slugs
+            $finish_ids = collect(explode(',', $row['finish']))
+                ->map(function ($finish) {
+                    $finish = trim($finish);
+                    $slug = $this->generateUniqueSlug(Finish::class, $finish);
+                    return Finish::firstOrCreate(
+                        ['name' => $finish],
+                        ['slug' => $slug, 'status' => 1]
+                    )->id;
+                })
+                ->toArray();
+
+            // Save Paint Types
+            $paint_type_ids = collect(explode(',', $row['paint_type']))
+                ->map(fn($paint_type) => PaintType::firstOrCreate(
+                    ['name' => trim($paint_type)],
+                    ['slug' => $this->generateUniqueSlug(PaintType::class, trim($paint_type)), 'status' => 1]
+                )->id)
+                ->toArray();
+
+            // Save Colors (individually for each paint type)
+            $color_ids = [];
+            $colorNames = collect(explode(',', $row['color']))->map('trim')->unique()->toArray();
+
+            foreach ($paint_type_ids as $paint_type_id) {
+                foreach ($colorNames as $colorName) {
+                    if (!empty($colorName)) {
+                        $color = Color::firstOrCreate(
+                            ['name' => $colorName, 'paint_type_id' => $paint_type_id],
+                            ['slug' => $this->generateUniqueSlug(Color::class, $colorName), 'status' => 1]
+                        );
+                        $color_ids[$paint_type_id][] = $color->id;
+                    }
+                }
+            }
+            // Save Color Effects (Independent of Paint Types & Colors)
+            $color_effect_ids = collect(explode(',', $row['color_effect']))
+                ->map(function ($color_effect) {
+                    return ColorEffect::firstOrCreate(
+                        ['name' => trim($color_effect)],
+                        ['slug' => $this->generateUniqueSlug(ColorEffect::class, trim($color_effect)), 'status' => 1]
+                    )->id;
+                })
+                ->toArray();
+
+
+
+            // Ensure unique slug for Product
+            $product_name = trim($row['product']);
+            $product_slug = $this->generateUniqueSlug(Product::class, $product_name);
+
+            if($row['division'] && $row['specification'] && $row['material'] && $row['manufacturer'] && $row['product']){
+                // Create Product
+               
+                $product = Product::updateOrCreate(
+                    [
+                        'name'             => $row['product'] ?? '',
+                        'division_id'      => $division->id,
+                        'specification_id' => $specification->id,
+                    ],
+                    [
+                        'user_id'             => Auth::user()->id,
+                        'material_type_id'    => $specification->id,
+                        'manufacturer_id'     => $manufacturer->id,
+                        'product_description' => $row['description'],
+                        'slug'                => $product_slug,
+                        'status'              => 1,
+                    ]
+                );
+                $product_id = $product->id;
+            }
+
+            $this->productVariations($row,$product_id);
+           
+
+            // Attach Sizes
+            
+        
+        }
+    }
+
+    private function generateUniqueSlug($model, $name)
+    {
+        $slug = Str::slug($name);
+        $original_slug = $slug;
+        $count = 1;
+
+        // Check if slug already exists
+        while ($model::where('slug', $slug)->exists()) {
+            $slug = $original_slug . '-' . $count;
+            $count++;
+        }
+
+        return $slug;
+    }
+
+    public function productVariations($row,$product_id){
+
+    }
+}
