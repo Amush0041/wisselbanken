@@ -21,3 +21,7 @@ yarn-error.log
 /.nova
 /.vscode
 /.zed
+bootstrap/cache/*.php
+public/error_log
+.well-known/
+website_af94e090/
