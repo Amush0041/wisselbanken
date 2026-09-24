@@ -391,26 +391,179 @@ class ProjectSchemaTest extends RbacTestCase
         $this->assertSame(1, DB::table('project_members')->count());
     }
 
+    public function test_enrol_inside_outer_transaction_stays_usable(): void
+    {
+        $p = $this->makeProject();
+        $racer = User::factory()->create();
+        $fired = false;
+
+        ProjectMember::creating(function () use (&$fired, $p, $racer) {
+            if ($fired) {
+                return;
+            }
+            $fired = true;
+            DB::table('project_members')->insert([
+                'project_id' => $p->id, 'user_id' => $this->user->id, 'org_id' => $this->org->id,
+                'granted_by' => $racer->id, 'granted_at' => now(), 'is_active' => true,
+                'created_at' => now(), 'updated_at' => now(),
+            ]);
+        });
+
+        // sqlite proves only that the transaction stays usable; REPEATABLE READ behaviour is proven only at gate B1 step 5.
+        DB::transaction(function () use ($p) {
+            $m = ProjectMember::enrol($p, $this->user->id, $this->org->id, null);
+            $this->assertFalse($m->wasRecentlyCreated);
+            $this->makeProject(['name' => 'written-after-race']);
+        });
+
+        $this->assertTrue($fired, 'race listener ran');
+        $this->assertSame(0, DB::transactionLevel());
+        $this->assertSame(1, DB::table('project_members')->where('project_id', $p->id)->where('user_id', $this->user->id)->count());
+        $this->assertSame(1, Project::where('name', 'written-after-race')->count());
+    }
+
     // ---- A6 ---------------------------------------------------------------------
 
-    public function test_enrol_unsaved_project_throws_and_leaves_legacy_row_untouched(): void
+    private function assertEnrolRefused(Project $project, int $orgId, string $message): void
+    {
+        try {
+            ProjectMember::enrol($project, $this->user->id, $orgId, null);
+            $this->fail('Expected InvalidArgumentException');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertSame($message, $e->getMessage());
+        }
+    }
+
+    private function insertInactiveLegacyMember(): void
     {
         $q = $this->makeQuote();
         DB::table('project_members')->insert([
             'quote_id' => $q->id, 'user_id' => $this->user->id, 'org_id' => $this->org->id,
-            'is_active' => false, 'granted_at' => '2020-01-01 00:00:00',
+            'granted_by' => null, 'is_active' => false, 'granted_at' => '2020-01-01 00:00:00',
             'created_at' => '2020-01-01 00:00:00', 'updated_at' => '2020-01-01 00:00:00',
         ]);
-        $before = DB::table('project_members')->get()->map(fn ($r) => (array) $r)->all();
+    }
 
-        try {
-            ProjectMember::enrol(new Project(), $this->user->id, $this->org->id, null);
-            $this->fail('Expected InvalidArgumentException');
-        } catch (\InvalidArgumentException) {
-            $this->addToAssertionCount(1);
+    public function test_enrol_unsaved_project_throws_and_leaves_legacy_row_untouched(): void
+    {
+        $this->insertInactiveLegacyMember();
+        $before = $this->memberRows();
+
+        $this->assertEnrolRefused(new Project(['org_id' => $this->org->id]), $this->org->id, 'Cannot enrol a member on an unsaved project.');
+
+        $this->assertSame($before, $this->memberRows());
+        $this->assertCount(1, $this->memberRows());
+    }
+
+    // ---- B14.2 soft-deleted project and guard order -----------------------------
+
+    public function test_enrol_soft_deleted_project_throws_and_writes_nothing(): void
+    {
+        $p = $this->makeProject();
+        ProjectMember::enrol($p, $this->user->id, $this->org->id, null);
+        $this->insertInactiveLegacyMember();
+        $p->delete();
+        $before = $this->memberRows();
+
+        $this->assertEnrolRefused($p, $this->org->id, 'Cannot enrol a member on a deleted project.');
+
+        $this->assertSame($before, $this->memberRows());
+        $this->assertCount(2, $this->memberRows());
+    }
+
+    public function test_enrol_soft_deleted_project_with_no_member_creates_no_row(): void
+    {
+        $p = $this->makeProject();
+        $p->delete();
+
+        $this->assertEnrolRefused($p, $this->org->id, 'Cannot enrol a member on a deleted project.');
+
+        $this->assertSame(0, DB::table('project_members')->count());
+    }
+
+    public function test_enrol_guard_order_unsaved_before_org_mismatch(): void
+    {
+        $this->assertEnrolRefused(new Project(['org_id' => $this->org->id]), $this->otherOrg()->id, 'Cannot enrol a member on an unsaved project.');
+    }
+
+    public function test_enrol_guard_order_unsaved_before_trashed(): void
+    {
+        $p = $this->makeProject();
+        $p->delete();
+        $p->exists = false;
+        $this->assertTrue($p->trashed());
+
+        $this->assertEnrolRefused($p, $this->org->id, 'Cannot enrol a member on an unsaved project.');
+    }
+
+    public function test_enrol_guard_order_trashed_before_org_mismatch(): void
+    {
+        $p = $this->makeProject();
+        $p->delete();
+
+        $this->assertEnrolRefused($p, $this->otherOrg()->id, 'Cannot enrol a member on a deleted project.');
+    }
+
+    public function test_enrol_org_mismatch_on_live_project_reports_org_error(): void
+    {
+        $p = $this->makeProject();
+
+        $this->assertEnrolRefused($p, $this->otherOrg()->id, 'Organization does not match the project organization.');
+        $this->assertSame(0, DB::table('project_members')->count());
+    }
+
+    // ---- B14.3 legacy quote_id FK / unique survive ->change() --------------------
+
+    public function test_legacy_quote_id_fk_and_unique_survive_change(): void
+    {
+        $this->assertFkEnforced();
+
+        foreach (['project_members', 'plan_crosswalk'] as $table) {
+            $fk = collect(Schema::getForeignKeys($table))->firstWhere('columns', ['quote_id']);
+            $this->assertNotNull($fk, "$table.quote_id FK still present");
+            $this->assertSame('quotes', $fk['foreign_table']);
         }
+        $this->assertTrue($this->hasIndex('project_members', ['quote_id', 'user_id'], true));
+        $this->assertTrue($this->hasIndex('plan_crosswalk', ['org_id', 'quote_id']));
+    }
 
-        $this->assertSame($before, DB::table('project_members')->get()->map(fn ($r) => (array) $r)->all());
+    public function test_legacy_quote_id_fk_rejects_unknown_quote(): void
+    {
+        $this->assertFkEnforced();
+
+        $this->expectException(\Illuminate\Database\QueryException::class);
+        DB::table('project_members')->insert(['quote_id' => 999999, 'user_id' => $this->user->id, 'org_id' => $this->org->id]);
+    }
+
+    public function test_legacy_quote_id_fk_rejects_unknown_quote_on_crosswalk(): void
+    {
+        $this->assertFkEnforced();
+
+        $this->expectException(\Illuminate\Database\QueryException::class);
+        DB::table('plan_crosswalk')->insert(['org_id' => $this->org->id, 'quote_id' => 999999, 'plan_line_code' => 'A1', 'created_by' => $this->user->id]);
+    }
+
+    public function test_force_deleting_quote_cascades_legacy_member_and_crosswalk_rows(): void
+    {
+        $this->assertFkEnforced();
+        $q = $this->makeQuote();
+        DB::table('project_members')->insert(['quote_id' => $q->id, 'user_id' => $this->user->id, 'org_id' => $this->org->id]);
+        DB::table('plan_crosswalk')->insert(['org_id' => $this->org->id, 'quote_id' => $q->id, 'plan_line_code' => 'A1', 'created_by' => $this->user->id]);
+
+        $q->forceDelete();
+
+        $this->assertSame(0, DB::table('project_members')->count());
+        $this->assertSame(0, DB::table('plan_crosswalk')->count());
+    }
+
+    public function test_legacy_unique_quote_user_enforced(): void
+    {
+        $q = $this->makeQuote();
+        $row = ['quote_id' => $q->id, 'user_id' => $this->user->id, 'org_id' => $this->org->id];
+        DB::table('project_members')->insert($row);
+
+        $this->expectException(\Illuminate\Database\UniqueConstraintViolationException::class);
+        DB::table('project_members')->insert($row);
     }
 
     // ---- scopeVisibleTo ---------------------------------------------------------
@@ -462,7 +615,8 @@ class ProjectSchemaTest extends RbacTestCase
     {
         $this->assertFkEnforced();
         $p = $this->makeProject();
-        $this->makeQuote()->update(['project_id' => $p->id]);
+        $q = $this->makeQuote();
+        $q->update(['project_id' => $p->id]);
 
         try {
             $p->forceDelete();
@@ -472,6 +626,10 @@ class ProjectSchemaTest extends RbacTestCase
         }
 
         $this->assertTrue(Project::withTrashed()->whereKey($p->id)->exists());
+
+        $q->update(['project_id' => null]);
+        $p->forceDelete();
+        $this->assertFalse(Project::withTrashed()->whereKey($p->id)->exists(), 'quotes.project_id FK was the blocker');
     }
 
     public function test_force_deleting_project_cascades_members_and_crosswalk(): void
@@ -503,6 +661,10 @@ class ProjectSchemaTest extends RbacTestCase
 
         $this->assertTrue(Organization::whereKey($this->org->id)->exists());
         $this->assertTrue(Project::whereKey($p->id)->exists());
+
+        $p->forceDelete();
+        $this->org->delete();
+        $this->assertFalse(Organization::whereKey($this->org->id)->exists(), 'projects.org_id FK was the blocker');
     }
 
     public function test_deleting_creator_nulls_projects_created_by(): void

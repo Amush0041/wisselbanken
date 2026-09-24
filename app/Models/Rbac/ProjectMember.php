@@ -42,6 +42,10 @@ class ProjectMember extends Model
             throw new \InvalidArgumentException('Cannot enrol a member on an unsaved project.');
         }
 
+        if ($project->trashed()) {
+            throw new \InvalidArgumentException('Cannot enrol a member on a deleted project.');
+        }
+
         if ((int) $project->org_id !== $orgId) {
             throw new \InvalidArgumentException('Organization does not match the project organization.');
         }
