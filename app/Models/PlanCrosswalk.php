@@ -18,6 +18,7 @@ class PlanCrosswalk extends Model
     protected $fillable = [
         'org_id',
         'quote_id',
+        'project_id',
         'plan_line_code',
         'product_id',
         'manufacturer_part_number',
@@ -30,6 +31,11 @@ class PlanCrosswalk extends Model
     public function organization(): BelongsTo
     {
         return $this->belongsTo(\App\Models\Rbac\Organization::class, 'org_id');
+    }
+
+    public function project(): BelongsTo
+    {
+        return $this->belongsTo(Project::class);
     }
 
     public function quote(): BelongsTo

@@ -19,6 +19,7 @@ class AuditLog extends Model
         'permission_group',
         'required_level',
         'project_id',
+        'quote_id',
         'batch',
         'outcome',
         'reason',

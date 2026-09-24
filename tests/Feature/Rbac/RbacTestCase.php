@@ -84,6 +84,12 @@ abstract class RbacTestCase extends TestCase
             '2026_07_07_000001_create_rbac_settings_table.php',
             '2026_07_07_000002_create_sod_conflict_rules_table.php',
             '2026_07_08_000001_create_role_assignment_logs_table.php',
+            '2026_09_01_000001_create_plan_crosswalk_table.php',
+            '2026_09_24_000001_create_projects_table.php',
+            '2026_09_24_000002_add_project_id_to_quotes_table.php',
+            '2026_09_24_000003_add_project_id_to_project_members_table.php',
+            '2026_09_24_000004_add_project_id_to_plan_crosswalk_table.php',
+            '2026_09_24_000005_add_quote_id_to_rbac_audit_logs_table.php',
         ];
 
         foreach ($migrations as $file) {
