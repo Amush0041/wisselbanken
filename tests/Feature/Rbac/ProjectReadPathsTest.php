@@ -617,8 +617,8 @@ class ProjectReadPathsTest extends ProjectTestCase
             $this->setMode($mode);
             foreach ($denied as $label => $user) {
                 $r = $this->asJson($user, $method, $this->uri($tpl, $this->q1), [], $this->writePayload($tpl));
-                // enforce: the middleware answers 403; audit: the controller scope answers 404 (destroyItem wraps it in its 500 catch-all)
-                $expected = $mode === 'enforce' ? 403 : (($method === 'DELETE' && str_contains($tpl, '/items/')) ? 500 : 404);
+                // enforce: the middleware answers 403; audit: the controller scope answers 404
+                $expected = $mode === 'enforce' ? 403 : 404;
                 $this->assertSame($expected, $r->getStatusCode(), "$mode / $label");
                 $this->assertEquals($before, $this->snapshot(), "$mode / $label wrote something");
             }

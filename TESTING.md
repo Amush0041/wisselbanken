@@ -13,7 +13,7 @@ anything.
 
 ## Known-failing baseline (as of 2026-09-25, Phase 3 Checkpoint 2 run)
 
-The RBAC suite is **566 passed / 3 failed** (Phase 4 destroyUser project-quote refusal baseline). (The earlier
+The RBAC suite is **568 passed / 3 failed** (Phase 4 destroyUser project-quote refusal baseline). (The earlier
 baseline of 55 passed / 3 failed, 113 assertions was measured **before** the
 projects work.) These 3 failures are pre-existing and independent of any feature work — do not report them as
 a regression you introduced, and do not treat a *new* failure as "probably

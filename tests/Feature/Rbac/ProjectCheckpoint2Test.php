@@ -146,6 +146,22 @@ class ProjectCheckpoint2Test extends ProjectTestCase
     }
 
     #[DataProvider('modes')]
+    public function test_destroy_item_with_a_missing_or_foreign_item_id_is_a_404_without_a_model_name(string $mode): void
+    {
+        $this->setMode($mode);
+        $q = $this->mkQuote($this->est, $this->p1);
+        $other = $this->mkQuote($this->est, $this->p1);
+        $foreign = $this->addItem($other);
+
+        foreach ([999999, $foreign] as $itemId) {
+            $r = $this->req($this->est, 'DELETE', "quotes/$q/items/$itemId")->assertNotFound();
+            $this->assertFalse($r->json('success'));
+            $this->assertStringNotContainsString('App\\Models', (string) $r->getContent());
+        }
+        $this->assertSame(1, DB::table('quote_items')->where('id', $foreign)->count());
+    }
+
+    #[DataProvider('modes')]
     public function test_an_invisible_quote_stays_404_even_for_a_role_holder(string $mode): void
     {
         $this->setMode($mode);

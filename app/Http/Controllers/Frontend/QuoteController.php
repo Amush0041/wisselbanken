@@ -570,6 +570,11 @@ class QuoteController extends Controller
             ]);
         } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
             throw $e;
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Quote item not found'
+            ], 404);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
