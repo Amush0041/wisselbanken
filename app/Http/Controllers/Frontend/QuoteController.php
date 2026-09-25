@@ -178,7 +178,7 @@ class QuoteController extends Controller
 
         abort_unless(
             $orgId !== null
-                && $permissions->checkPermission($userId, $orgId, 'estimate_management', $level, $quote->project_id !== null ? (int) $quote->project_id : null),
+                && $permissions->checkPermission($userId, $orgId, 'estimate_management', $level, (int) $quote->project_id),
             403,
             'You do not have permission to change this estimate.'
         );
@@ -609,7 +609,6 @@ class QuoteController extends Controller
     public function duplicate($id)
     {
         $originalQuote = $this->writableQuote($id, 'O', ['items']);
-        abort_if($originalQuote->project_id === null, 422, 'This estimate does not belong to a project yet.');
 
         $newQuote = Quote::create([
             'user_id' => Auth::id(),

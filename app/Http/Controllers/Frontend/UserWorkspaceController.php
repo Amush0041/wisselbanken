@@ -91,6 +91,12 @@ class UserWorkspaceController extends Controller
                 ->filter()
             : collect();
 
+        $canReadQuotes = $orgId && $this->permissions->checkPermission($userId, $orgId, 'estimate_management', 'R');
+        $visibleQuotes = fn () => Quote::visibleTo($userId, $orgId, (bool) $canReadQuotes);
+        $quotesCount = (int) $visibleQuotes()->count();
+        $quoteStatusCounts = $visibleQuotes()->selectRaw('status, COUNT(*) as total')->groupBy('status')->pluck('total', 'status');
+        $recentQuotes = $visibleQuotes()->orderByDesc('quotes.created_at')->orderByDesc('quotes.id')->limit(5)->get();
+
         $canManageProjects = $orgId && $this->permissions->checkPermission($userId, $orgId, 'project_management', 'F');
 
         return view('user.dashboard', compact(
@@ -102,6 +108,9 @@ class UserWorkspaceController extends Controller
             'myRoles',
             'canManageProjects',
             'orgId',
+            'quotesCount',
+            'quoteStatusCounts',
+            'recentQuotes',
         ));
     }
 

@@ -87,7 +87,7 @@ class ProjectWorkspaceController extends Controller
     {
         $userId = (int) Auth::id();
         $orgId = CurrentOrg::id($userId);
-        abort_if($orgId === null || $quote->project_id === null, 404);
+        abort_if($orgId === null, 404);
 
         $visible = Project::visibleTo($userId, $orgId)->whereKey($quote->project_id)->exists();
         abort_unless($visible, 404);

@@ -100,15 +100,20 @@ class ProjectCheckpoint2Test extends ProjectTestCase
     }
 
     #[DataProvider('writeRoutes')]
-    public function test_an_r_only_owner_is_403_on_their_own_legacy_null_project_quote_in_audit_mode(string $method, string $uri, array $data): void
+    public function test_an_r_only_owner_is_404_on_their_own_null_project_quote_and_nothing_changes(string $method, string $uri, array $data): void
     {
         $own = $this->mkQuote($this->architect, null);
         $item = $this->addItem($own);
         $c = $this->customer($this->architect, 'AC');
         [$u, $d] = $this->fill($uri, $data, $own, $item, $c);
+        $quotes = DB::table('quotes')->count();
 
-        $this->req($this->architect, $method, $u, $d)->assertForbidden();
+        $this->req($this->architect, $method, $u, $d)->assertNotFound();
+
         $this->assertTrue(DB::table('quotes')->where('id', $own)->whereNull('deleted_at')->exists());
+        $this->assertSame($quotes, DB::table('quotes')->count(), 'no duplicate created');
+        $this->assertSame(1, DB::table('quote_items')->where('quote_id', $own)->count());
+        $this->assertNull(DB::table('quotes')->where('id', $own)->value('notes'));
     }
 
     public function test_an_owner_with_the_right_level_can_change_their_own_quote(): void
@@ -174,27 +179,60 @@ class ProjectCheckpoint2Test extends ProjectTestCase
         $this->assertTrue(DB::table('quotes')->where('id', $this->q3)->whereNull('deleted_at')->exists());
     }
 
-    public function test_a_legacy_null_project_quote_gets_the_org_level_check_in_audit_and_fails_closed_in_enforce(): void
+    public function test_a_null_project_quote_is_untouchable_even_for_its_author_with_the_level_in_audit_and_enforce(): void
     {
         $own = $this->mkQuote($this->est, null);
 
         $this->setMode('audit');
-        $this->req($this->est, 'PUT', "quotes/$own", ['notes' => 'audit'])->assertOk();
-        $this->assertSame('audit', DB::table('quotes')->where('id', $own)->value('notes'));
+        $this->req($this->est, 'PUT', "quotes/$own", ['notes' => 'audit'])->assertNotFound();
+        $this->req($this->est, 'DELETE', "quotes/$own")->assertNotFound();
+        $this->assertNull(DB::table('quotes')->where('id', $own)->value('notes'), 'audit writes nothing');
 
         $this->setMode('enforce');
         $this->req($this->est, 'PUT', "quotes/$own", ['notes' => 'enforce'])->assertForbidden();
-        $this->assertSame('audit', DB::table('quotes')->where('id', $own)->value('notes'), 'enforce writes nothing');
+        $this->assertNull(DB::table('quotes')->where('id', $own)->value('notes'), 'enforce writes nothing');
+        $this->assertTrue(DB::table('quotes')->where('id', $own)->whereNull('deleted_at')->exists());
     }
 
-    public function test_an_owner_without_any_org_role_is_403_on_their_own_quote(): void
+    /**
+     * writableQuote also re-checks the level itself. Behaviourally the project id is redundant with Quote::visibleTo
+     * (both read the same active-member rule), so the contract "the level check is project-scoped" is pinned on the call.
+     */
+    public function test_writable_quote_level_check_carries_the_quotes_project_id(): void
+    {
+        $recorder = new class(app(\App\Services\Rbac\PermissionMatrix::class), app(\App\Services\Rbac\DelegationService::class), app(\App\Services\Rbac\OrgRelationshipService::class)) extends \App\Services\Rbac\PermissionService {
+            public array $calls = [];
+
+            public function checkPermission(int $userId, int $orgId, string $permissionGroup, string $requiredLevel, ?int $projectId = null): bool
+            {
+                $caller = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 2)[1]['function'] ?? '';
+                $this->calls[] = [$userId, $orgId, $permissionGroup, $requiredLevel, $projectId, $caller];
+
+                return parent::checkPermission($userId, $orgId, $permissionGroup, $requiredLevel, $projectId);
+            }
+        };
+        $this->app->instance(\App\Services\Rbac\PermissionService::class, $recorder);
+
+        $this->req($this->est, 'PUT', "quotes/{$this->q2}", ['notes' => 'x'])->assertOk();
+
+        $fromWritableQuote = array_values(array_filter($recorder->calls, fn ($c) => $c[5] === 'writableQuote' && $c[0] === $this->est->id));
+        $this->assertCount(2, $fromWritableQuote, 'the members flag and the level check');
+        $this->assertSame([null, $this->p1], array_column($fromWritableQuote, 4), 'the level check is scoped to the quote\'s project P1');
+        $this->assertSame(['O', 'O'], array_column($fromWritableQuote, 3));
+    }
+
+    public function test_an_owner_without_any_org_role_is_denied_on_their_own_quote(): void
     {
         $none = $this->mkUser();
-        $own = $this->mkQuote($none, null);
+        $own = $this->mkQuote($none, $this->p1);
+        $ownNull = $this->mkQuote($none, null);
 
-        $this->req($none, 'PUT', "quotes/$own", ['notes' => 'x'])->assertForbidden();
-        $this->req($none, 'DELETE', "quotes/$own")->assertForbidden();
+        foreach ([$own, $ownNull] as $q) {
+            $this->req($none, 'PUT', "quotes/$q", ['notes' => 'x'])->assertNotFound();
+            $this->req($none, 'DELETE', "quotes/$q")->assertNotFound();
+        }
         $this->assertNull(DB::table('quotes')->where('id', $own)->value('notes'));
+        $this->assertTrue(DB::table('quotes')->whereIn('id', [$own, $ownNull])->whereNull('deleted_at')->count() === 2);
     }
 
     // ---- 2. RbacController::destroyUser ----------------------------------------
@@ -314,7 +352,7 @@ class ProjectCheckpoint2Test extends ProjectTestCase
 
     // ---- 2b. destroyUser: owner of quotes inside projects -----------------------
 
-    private const QUOTE_REFUSAL = 'This user owns quotes inside projects and cannot be deleted. Reassign or delete those quotes first.';
+    private const QUOTE_REFUSAL = 'This user owns quotes and cannot be deleted. Reassign or delete those quotes first.';
 
     /** @return array<string,int> */
     private function footprint(User $u): array
@@ -359,18 +397,29 @@ class ProjectCheckpoint2Test extends ProjectTestCase
     }
 
     #[DataProvider('modes')]
-    public function test_delete_user_is_allowed_when_all_their_quotes_have_a_null_project_id(string $mode): void
+    public function test_delete_user_is_refused_when_their_only_quotes_have_a_null_project_id(string $mode): void
     {
         $this->setMode($mode);
-        $this->mkQuote($this->est, null);
+        $live = $this->mkQuote($this->est, null);
+        $trashed = $this->mkQuote($this->est, null, ['deleted_at' => now()->toDateTimeString()]);
+        $before = $this->footprint($this->est);
+        $this->assertSame(2, $before['quotes_all']);
+
+        $this->deleteUser($this->est)->assertRedirect('/admin/rbac/users')->assertSessionHas('error', self::QUOTE_REFUSAL)->assertSessionMissing('success');
+
+        $this->assertSame($before, $this->footprint($this->est));
+        $this->assertTrue(User::whereKey($this->est->id)->exists());
+        $this->assertTrue(DB::table('quotes')->where('id', $live)->whereNull('deleted_at')->exists());
+        $this->assertTrue(DB::table('quotes')->where('id', $trashed)->whereNotNull('deleted_at')->exists());
+    }
+
+    public function test_delete_user_is_refused_for_only_a_trashed_null_project_quote(): void
+    {
         $this->mkQuote($this->est, null, ['deleted_at' => now()->toDateTimeString()]);
 
-        $this->deleteUser($this->est)->assertRedirect(route('admin.rbac.users'))->assertSessionHas('success')->assertSessionMissing('error');
+        $this->deleteUser($this->est)->assertSessionHas('error', self::QUOTE_REFUSAL);
 
-        $this->assertFalse(User::whereKey($this->est->id)->exists());
-        $this->assertSame(0, DB::table('project_members')->where('user_id', $this->est->id)->count());
-        $this->assertSame(0, DB::table('user_org_roles')->where('user_id', $this->est->id)->count());
-        $this->assertSame(2, DB::table('quotes')->where('user_id', $this->owner->id)->where('project_id', $this->p1)->count(), 'others project quotes untouched');
+        $this->assertTrue(User::whereKey($this->est->id)->exists());
     }
 
     #[DataProvider('modes')]
@@ -559,28 +608,29 @@ class ProjectCheckpoint2Test extends ProjectTestCase
 
     public function test_crosswalk_projects_list_is_shown_for_a_role_less_owner_and_member_but_rows_stay_narrow(): void
     {
-        $ownSuper = $this->mkQuote($this->super, null);
-        $mine = $this->xwRow(null, 'MINE', $ownSuper);
+        $ownSuper = $this->mkQuote($this->super, $this->p1);
+        $this->xwRow(null, 'MINE', $ownSuper);
         $this->xwRow($this->p1, 'B1');
         $this->xwRow($this->p2, 'H2');
 
         $r = $this->req($this->super, 'GET', 'plan-crosswalk')->assertOk();
 
         $this->assertSame([$this->p1], $r->viewData('projects')->pluck('id')->all(), 'visible projects only, no P2/P3');
-        $this->assertSame([$mine], $r->viewData('rows')->pluck('id')->all(), 'rows must not widen');
+        $this->assertSame([], $r->viewData('rows')->pluck('id')->all(), 'no estimate_management R: no rows at all');
     }
 
     public function test_crosswalk_projects_filter_does_not_widen_rows_for_a_role_less_member(): void
     {
-        $ownSuper = $this->mkQuote($this->super, null);
-        $mine = $this->xwRow(null, 'MINE', $ownSuper);
+        $ownSuper = $this->mkQuote($this->super, $this->p1);
+        $this->xwRow(null, 'MINE', $ownSuper);
         $this->xwRow($this->p1, 'B1');
+        $this->xwRow($this->p2, 'H2');
 
         $r = $this->req($this->super, 'GET', 'plan-crosswalk?project_id='.$this->p1)->assertOk();
-        $this->assertNotContains('B1', $r->viewData('rows')->pluck('plan_line_code')->all());
+        $this->assertSame([], $r->viewData('rows')->pluck('plan_line_code')->all());
 
         $r = $this->req($this->super, 'GET', 'plan-crosswalk?project_id='.$this->p2)->assertOk();
-        $this->assertSame([$mine], $r->viewData('rows')->pluck('id')->all(), 'an invisible project id is ignored, not widened');
+        $this->assertSame([], $r->viewData('rows')->pluck('id')->all(), 'an invisible project id is ignored, not widened');
         $this->assertSame([$this->p1], $r->viewData('projects')->pluck('id')->all());
     }
 

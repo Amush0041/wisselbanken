@@ -3,7 +3,6 @@
 namespace App\Models\Rbac;
 
 use App\Models\Project;
-use App\Models\Quote;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -12,7 +11,6 @@ use Illuminate\Database\UniqueConstraintViolationException;
 class ProjectMember extends Model
 {
     protected $fillable = [
-        'quote_id',
         'project_id',
         'user_id',
         'org_id',
@@ -29,11 +27,6 @@ class ProjectMember extends Model
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class);
-    }
-
-    public function quote(): BelongsTo
-    {
-        return $this->belongsTo(Quote::class, 'quote_id');
     }
 
     public static function enrol(Project $project, int $userId, int $orgId, ?int $grantedBy): self

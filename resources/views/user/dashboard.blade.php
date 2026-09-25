@@ -12,7 +12,6 @@
 
         $userId = Auth::id();
         $orders = \App\Models\Order::where('user_id', $userId);
-        $quotes = \App\Models\Quote::where('user_id', $userId);
         $lists = \App\Models\SavedList::where('user_id', $userId);
 
         // Prefer controller-injected vars; fall back to inline computation for Route::view() compatibility.
@@ -39,11 +38,7 @@
         $ordersCount = (int) $orders->count();
         $ordersTotal = (float) $orders->sum('total');
         $listsCount = (int) $lists->count();
-        $quotesCount = (int) $quotes->count();
         $listItemsCount = (int) \App\Models\SavedListItem::whereHas('savedList', fn($q) => $q->where('user_id', $userId))->count();
-
-        $quoteStatusCounts = \App\Models\Quote::where('user_id', $userId)
-            ->selectRaw("status, COUNT(*) as total")->groupBy('status')->pluck('total', 'status');
 
         $ordersByMonth = \App\Models\Order::where('user_id', $userId)
             ->where('created_at', '>=', now()->subMonths(5)->startOfMonth())
@@ -63,7 +58,6 @@
 
         $recentOrders = \App\Models\Order::where('user_id', $userId)->orderByDesc('created_at')->limit(5)->get();
         $recentLists = \App\Models\SavedList::where('user_id', $userId)->withCount('items')->orderByDesc('created_at')->limit(5)->get();
-        $recentQuotes = \App\Models\Quote::where('user_id', $userId)->orderByDesc('created_at')->limit(5)->get();
 
         $chartQuoteStatus = [
             'series' => [

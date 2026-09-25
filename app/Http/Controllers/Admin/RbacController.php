@@ -498,8 +498,8 @@ class RbacController extends Controller
             return back()->with('error', 'This user created projects and cannot be deleted. Reassign or delete those projects first.');
         }
 
-        if (Quote::withTrashed()->where('user_id', $user->id)->whereNotNull('project_id')->exists()) {
-            return back()->with('error', 'This user owns quotes inside projects and cannot be deleted. Reassign or delete those quotes first.');
+        if (Quote::withTrashed()->where('user_id', $user->id)->exists()) {
+            return back()->with('error', 'This user owns quotes and cannot be deleted. Reassign or delete those quotes first.');
         }
 
         $name = $user->name;

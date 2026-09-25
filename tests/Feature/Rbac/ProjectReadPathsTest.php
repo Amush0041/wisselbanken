@@ -211,10 +211,10 @@ class ProjectReadPathsTest extends ProjectTestCase
         return [$ownNull, $ownInP2];
     }
 
-    public function test_r1_list_shows_own_and_project_quotes_and_the_total_matches(): void
+    public function test_r1_list_shows_only_quotes_in_visible_projects_and_the_total_matches(): void
     {
         [$ownNull, $ownInP2] = $this->listFixture();
-        $expected = [$this->q1, $this->q2, $ownNull, $ownInP2];
+        $expected = [$this->q1, $this->q2];
         sort($expected);
 
         $r = $this->asJson($this->est, 'GET', 'quotes/list')->assertOk();
@@ -222,10 +222,10 @@ class ProjectReadPathsTest extends ProjectTestCase
         $ids = array_column($r->json('quotes'), 'id');
         sort($ids);
         $this->assertSame($expected, $ids);
-        $this->assertSame('166.00', $r->json('total_amount'), '100 + 50 + 11 + 5 = the same set as the list');
-        $this->assertSame(4, $r->json('pagination.total'));
-        foreach ([$this->q0, $this->q3, $this->q4] as $hidden) {
-            $this->assertNotContains($hidden, $ids, "quote $hidden must not be visible");
+        $this->assertSame('150.00', $r->json('total_amount'), '100 + 50 = the same set as the list');
+        $this->assertSame(2, $r->json('pagination.total'));
+        foreach ([$this->q0, $this->q3, $this->q4, $ownNull, $ownInP2] as $hidden) {
+            $this->assertNotContains($hidden, $ids, "quote $hidden must not be visible: NULL project, project without membership and other org stay hidden, own or not");
         }
     }
 
@@ -237,11 +237,13 @@ class ProjectReadPathsTest extends ProjectTestCase
         $this->assertSame([$this->q1, $this->q2], $this->listedIds($this->multi, $this->orgSession(99999)), 'stale session org falls back to the first active org');
     }
 
-    public function test_r1_owner_sees_own_quotes_in_any_org_context_and_null_project_quotes(): void
+    public function test_r1_owner_sees_their_quotes_only_through_project_membership_never_a_null_project_quote(): void
     {
-        $r = $this->listedIds($this->owner);
+        $this->assertSame([$this->q1, $this->q2, $this->q3], $this->listedIds($this->owner));
+        $this->assertSame([$this->q1, $this->q2, $this->q3], $this->listedIds($this->owner, $this->orgSession(99999)), 'a stale session org falls back to org A');
 
-        $this->assertSame([$this->q0, $this->q1, $this->q2, $this->q3], $r);
+        DB::table('project_members')->where('project_id', $this->p2)->where('user_id', $this->owner->id)->update(['is_active' => false]);
+        $this->assertSame([$this->q1, $this->q2], $this->listedIds($this->owner), 'an author removed from P2 no longer sees their own Q3');
     }
 
     public function test_r1_inactive_member_and_stranger_see_nothing_of_the_project(): void
@@ -281,9 +283,9 @@ class ProjectReadPathsTest extends ProjectTestCase
     }
 
     #[DataProvider('readRoutes')]
-    public function test_r2_owner_reads_a_null_project_quote(string $tpl): void
+    public function test_r2_owner_gets_404_for_their_own_null_project_quote(string $tpl): void
     {
-        $this->asJson($this->owner, 'GET', $this->uri($tpl, $this->q0))->assertOk();
+        $this->asJson($this->owner, 'GET', $this->uri($tpl, $this->q0))->assertNotFound();
     }
 
     public function test_r2_details_of_a_teammates_quote_return_the_quote(): void
@@ -334,24 +336,25 @@ class ProjectReadPathsTest extends ProjectTestCase
         $this->assertNotContains($this->q4, $r->viewData('myProjects')->pluck('id')->all());
     }
 
-    // ---- R11 dashboard counters (H8) --------------------------------------------
+    // ---- R11 dashboard counters (H8 superseded by Phase 5 A5: the counters follow the quotes index) ----
 
-    public function test_r11_counters_stay_owner_only_while_my_projects_shows_the_teammates_quote(): void
+    /** Human-confirmed-at-Checkpoint-2 change: the Phase 3 H8 owner-only counters are replaced by the quotes-index scope. */
+    public function test_r11_counters_follow_the_quotes_index_while_a_null_project_own_quote_is_never_counted(): void
     {
-        $own = $this->mkQuote($this->viewer, null, ['name' => 'viewer own', 'status' => 'sent', 'quote_number' => 'OWN-1']);
+        $this->mkQuote($this->viewer, null, ['name' => 'viewer own', 'status' => 'sent', 'quote_number' => 'OWN-1']);
 
         $r = $this->asJson($this->viewer, 'GET', 'user-dashboard')->assertOk();
         $html = $r->getContent();
 
         $this->assertEqualsCanonicalizing([$this->q1, $this->q2], $r->viewData('myProjects')->pluck('id')->all());
         $this->assertSame(1, preg_match('#<span class="fw-semibold">(\d+)</span> Quotes#', $html, $m));
-        $this->assertSame('1', $m[1], 'quotesCount counts only the user\'s own quotes');
-        $this->assertStringContainsString('OWN-1', $html, 'recent quotes lists the own quote');
-        $this->assertStringNotContainsString('QT-2', $html, 'recent quotes never lists a teammate quote (Q1)');
-        $this->assertStringNotContainsString('QT-3', $html, 'recent quotes never lists a teammate quote (Q2)');
+        $this->assertSame('2', $m[1], 'viewer holds estimate_management R: both P1 quotes count, the NULL-project own quote does not');
+        $this->assertStringContainsString('QT-2', $html);
+        $this->assertStringContainsString('QT-3', $html);
+        $this->assertStringNotContainsString('OWN-1', $html, 'a NULL-project quote is listed for nobody');
         $this->assertSame(1, preg_match('#var chartQuoteOpts = \{\s*series: \[(\d+),(\d+),(\d+)\]#', $html, $c), 'status chart series present');
-        $this->assertSame(['0', '1', '0'], [$c[1], $c[2], $c[3]], 'status chart counts only the own sent quote');
-        $this->assertStringContainsString('Q1', $html, 'the teammate quote is in the My Projects panel');
+        $this->assertSame(['2', '0', '0'], [$c[1], $c[2], $c[3]], 'two draft P1 quotes, the sent NULL-project quote is absent');
+        $this->assertSame(2, $this->asJson($this->viewer, 'GET', 'quotes/list')->json('pagination.total'), 'the counter equals the quotes index');
     }
 
     // ---- R14 dashboard for a project_management F member (D16) ------------------
@@ -446,8 +449,8 @@ class ProjectReadPathsTest extends ProjectTestCase
 
         $ids = $r->viewData('rows')->pluck('id')->all();
         sort($ids);
-        $this->assertSame([$backfilled, $native, $own], $ids);
-        foreach ([$hiddenProject, $hiddenNull, $otherOrg, $orgBQuote] as $hidden) {
+        $this->assertSame([$backfilled, $native], $ids, 'only rows of visible projects; a quote-only row without a project is dead');
+        foreach ([$own, $hiddenProject, $hiddenNull, $otherOrg, $orgBQuote] as $hidden) {
             $this->assertNotContains($hidden, $ids);
         }
         $projects = $r->viewData('projects');
@@ -681,9 +684,9 @@ class ProjectReadPathsTest extends ProjectTestCase
             ->assertStatus(302)->assertRedirect('/previous')->assertSessionHas('rbac_denied');
     }
 
-    public function test_r10_owner_of_a_null_project_quote_in_audit_mode_gets_200_and_a_would_block_row(): void
+    public function test_r10_owner_of_a_null_project_quote_in_audit_mode_gets_404_and_a_would_block_row(): void
     {
-        $this->asJson($this->owner, 'GET', "quotes/{$this->q0}/details")->assertOk();
+        $this->asJson($this->owner, 'GET', "quotes/{$this->q0}/details")->assertNotFound();
 
         $row = AuditLog::firstOrFail();
         $this->assertSame('would_block', $row->outcome);
@@ -702,14 +705,15 @@ class ProjectReadPathsTest extends ProjectTestCase
 
     // ---- R13 trashed project ----------------------------------------------------
 
-    public function test_r13_a_quote_in_a_trashed_project_is_visible_to_its_owner_only(): void
+    public function test_r13_a_quote_in_a_trashed_project_is_visible_to_nobody_its_author_included(): void
     {
         DB::table('projects')->where('id', $this->p1)->update(['deleted_at' => now()]);
 
         $this->assertSame([], $this->listedIds($this->est), 'a member no longer sees it');
         $this->asJson($this->est, 'GET', "quotes/{$this->q1}/details")->assertNotFound();
-        $this->assertContains($this->q1, $this->listedIds($this->owner), 'the owner still does (user_id clause)');
-        $this->asJson($this->owner, 'GET', "quotes/{$this->q1}/details")->assertOk();
+        $this->assertNotContains($this->q1, $this->listedIds($this->owner), 'the author no longer does either (no user_id clause)');
+        $this->assertSame([$this->q3], $this->listedIds($this->owner), 'only the quote of the live project P2 remains');
+        $this->asJson($this->owner, 'GET', "quotes/{$this->q1}/details")->assertNotFound();
 
         $dash = $this->asJson($this->viewer, 'GET', 'user-dashboard')->assertOk();
         $this->assertTrue($dash->viewData('myProjects')->isEmpty());
@@ -741,8 +745,9 @@ class ProjectReadPathsTest extends ProjectTestCase
 
     public function test_h9_1_list_filters_the_member_clause_by_the_role_and_the_total_matches(): void
     {
-        $ownSuper = $this->ownQuote($this->super, null, 8);
-        $ownEst = $this->ownQuote($this->est, null, 11);
+        $ownSuper = $this->ownQuote($this->super, $this->p1, 8);
+        $ownEst = $this->ownQuote($this->est, $this->p1, 11);
+        $nullSuper = $this->ownQuote($this->super, null, 3);
         $this->item($this->q1, 100);
         $this->item($this->q2, 50);
 
@@ -752,9 +757,12 @@ class ProjectReadPathsTest extends ProjectTestCase
 
         $ids = array_column($with->json('quotes'), 'id');
         sort($ids);
-        $this->assertSame([$this->q1, $this->q2, $ownEst], $ids);
-        $this->assertSame('161.00', $with->json('total_amount'));
-        $this->assertSame([$ownSuper], array_column($without->json('quotes'), 'id'), 'role-less member sees only their own');
+        $expected = [$this->q1, $this->q2, $ownSuper, $ownEst];
+        sort($expected);
+        $this->assertSame($expected, $ids);
+        $this->assertSame('169.00', $with->json('total_amount'));
+        $this->assertSame([$ownSuper], array_column($without->json('quotes'), 'id'), 'role-less member sees only their own quote inside their project, not the teammates\' and not the NULL-project one');
+        $this->assertNotContains($nullSuper, array_column($without->json('quotes'), 'id'));
         $this->assertSame('8.00', $without->json('total_amount'), 'total equals the list set');
         $this->assertSame(1, $without->json('pagination.total'));
 
@@ -835,26 +843,28 @@ class ProjectReadPathsTest extends ProjectTestCase
         $this->asJson($this->super, 'GET', "quotes/{$this->q1}/details")->assertNotFound();
     }
 
-    public function test_h9_2_a_user_without_any_org_reads_only_their_own_quotes(): void
+    public function test_h9_2_a_user_without_any_org_reads_nothing_not_even_their_own_quotes(): void
     {
         $orgless = $this->mkUser();
-        $own = $this->ownQuote($orgless);
+        $own = $this->ownQuote($orgless, $this->p1);
+        $ownNull = $this->ownQuote($orgless);
 
-        $this->assertSame([$own], $this->listedIds($orgless));
-        $this->asJson($orgless, 'GET', "quotes/$own/details")->assertOk();
+        $this->assertSame([], $this->listedIds($orgless));
+        $this->asJson($orgless, 'GET', "quotes/$own/details")->assertNotFound();
+        $this->asJson($orgless, 'GET', "quotes/$ownNull/details")->assertNotFound();
         $this->asJson($orgless, 'GET', "quotes/{$this->q1}/details")->assertNotFound();
     }
 
-    public function test_h9_4_crosswalk_index_for_a_role_less_member_shows_only_their_own_quotes_rows(): void
+    public function test_h9_4_crosswalk_index_for_a_role_less_member_shows_no_rows(): void
     {
         $ownSuper = $this->ownQuote($this->super);
-        $mine = $this->crosswalk($ownSuper, null, $this->orgA->id, 'MINE');
+        $this->crosswalk($ownSuper, null, $this->orgA->id, 'MINE');
         $backfilled = $this->crosswalk($this->q1, $this->p1, $this->orgA->id, 'B1');
         $native = $this->crosswalk(0, $this->p1, $this->orgA->id, 'N1');
 
         $r = $this->asJson($this->super, 'GET', 'plan-crosswalk')->assertOk();
 
-        $this->assertSame([$mine], $r->viewData('rows')->pluck('id')->all(), 'no project rows, no teammates\' quote rows');
+        $this->assertSame([], $r->viewData('rows')->pluck('id')->all(), 'no estimate_management R: no rows at all, not even the own quote-only row');
         $this->assertSame([$this->p1], $r->viewData('projects')->pluck('id')->all(), 'the project list is unconditional: visible projects only, rows stay narrow');
 
         $member = $this->asJson($this->est, 'GET', 'plan-crosswalk')->assertOk();
@@ -1018,8 +1028,8 @@ class ProjectReadPathsTest extends ProjectTestCase
         $this->d18();
         $this->item($this->q1, 100);
         $this->item($this->q2, 50);
-        $own = $this->ownQuote($csr, null, 8);
-        $mine = $this->crosswalk($own, null, $this->orgA->id, 'MINE');
+        $own = $this->ownQuote($csr, $this->p1, 8);
+        $this->crosswalk($own, null, $this->orgA->id, 'MINE');
         $this->crosswalk($this->q1, $this->p1, $this->orgA->id, 'B1');
         $this->crosswalk(0, $this->p1, $this->orgA->id, 'N1');
 
@@ -1041,7 +1051,7 @@ class ProjectReadPathsTest extends ProjectTestCase
         $this->assertSame('would_block', AuditLog::firstOrFail()->outcome);
 
         $xw = $this->asJson($csr, 'GET', 'plan-crosswalk')->assertOk();
-        $this->assertSame([$mine], $xw->viewData('rows')->pluck('id')->all(), 'own-quote rows only');
+        $this->assertSame([], $xw->viewData('rows')->pluck('id')->all(), 'no estimate_management R: no crosswalk rows');
         $this->assertSame([$this->p1], $xw->viewData('projects')->pluck('id')->all(), 'unconditional visible-project list; P2 stays hidden');
 
         // enforce mode (JSON): blocked by the middleware; agrees with audit
@@ -1056,8 +1066,8 @@ class ProjectReadPathsTest extends ProjectTestCase
         [, $architect] = $this->groupFixture();
         $this->d18();
         $this->item($this->q2, 50);
-        $own = $this->ownQuote($architect, null, 8);
-        $mine = $this->crosswalk($own, null, $this->orgA->id, 'MINE');
+        $own = $this->ownQuote($architect, $this->p1, 8);
+        $this->crosswalk($own, null, $this->orgA->id, 'MINE');
         $backfilled = $this->crosswalk($this->q1, $this->p1, $this->orgA->id, 'B1');
         $native = $this->crosswalk(0, $this->p1, $this->orgA->id, 'N1');
         $hidden = $this->crosswalk($this->q3, $this->p2, $this->orgA->id, 'H1');
@@ -1076,7 +1086,7 @@ class ProjectReadPathsTest extends ProjectTestCase
         $xw = $this->asJson($architect, 'GET', 'plan-crosswalk')->assertOk();
         $rows = $xw->viewData('rows')->pluck('id')->all();
         sort($rows);
-        $this->assertSame([$mine, $backfilled, $native], $rows);
+        $this->assertSame([$backfilled, $native], $rows);
         $this->assertNotContains($hidden, $rows);
         $this->assertSame(0, AuditLog::count(), 'no would_block row for a member with the group');
 

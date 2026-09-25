@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * Plan crosswalk (doc §4.6) — maps a buyer's plan line item code to a
- * WisselBanken SKU and a manufacturer part number within a project (quote).
+ * WisselBanken SKU and a manufacturer part number within a project.
  * UI is deferred to a future release; this model satisfies the Release 1
  * data-model and access-control requirement.
  */
@@ -17,7 +17,6 @@ class PlanCrosswalk extends Model
 
     protected $fillable = [
         'org_id',
-        'quote_id',
         'project_id',
         'plan_line_code',
         'product_id',
@@ -36,11 +35,6 @@ class PlanCrosswalk extends Model
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class);
-    }
-
-    public function quote(): BelongsTo
-    {
-        return $this->belongsTo(Quote::class);
     }
 
     public function product(): BelongsTo

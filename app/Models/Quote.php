@@ -51,13 +51,13 @@ class Quote extends Model
 
     public function scopeVisibleTo(Builder $query, int $userId, ?int $orgId, bool $members = true): Builder
     {
-        return $query->where(function (Builder $q) use ($userId, $orgId, $members) {
-            $q->where('quotes.user_id', $userId);
+        if ($orgId === null) {
+            return $query->whereRaw('0 = 1');
+        }
 
-            if ($members && $orgId !== null) {
-                $q->orWhereIn('quotes.project_id', Project::visibleTo($userId, $orgId)->select('projects.id'));
-            }
-        });
+        return $query
+            ->whereIn('quotes.project_id', Project::visibleTo($userId, $orgId)->select('projects.id'))
+            ->when(! $members, fn (Builder $q) => $q->where('quotes.user_id', $userId));
     }
 
     public function savedList()

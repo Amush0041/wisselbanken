@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Frontend;
 use App\Http\Controllers\Controller;
 use App\Models\PlanCrosswalk;
 use App\Models\Product;
-use App\Models\Quote;
 use App\Models\Project;
 use App\Models\Rbac\UserOrgRole;
 use App\Services\Rbac\PermissionService;
@@ -49,13 +48,11 @@ class PlanCrosswalkController extends Controller
 
             $rows = PlanCrosswalk::with(['product', 'project', 'creator'])
                 ->where('org_id', $orgId)
-                ->where(function ($q) use ($userId, $orgId, $members) {
-                    $q->whereIn('quote_id', Quote::visibleTo($userId, $orgId, $members)->select('quotes.id'));
-
-                    if ($members) {
-                        $q->orWhereIn('project_id', Project::visibleTo($userId, $orgId)->select('projects.id'));
-                    }
-                })
+                ->when(
+                    $members,
+                    fn ($q) => $q->whereIn('project_id', Project::visibleTo($userId, $orgId)->select('projects.id')),
+                    fn ($q) => $q->whereRaw('0 = 1'),
+                )
                 ->when($selectedProjectId, fn ($q) => $q->where('project_id', $selectedProjectId))
                 ->orderBy('project_id')
                 ->orderBy('plan_line_code')
@@ -143,8 +140,6 @@ class PlanCrosswalkController extends Controller
 
     private function writableRow(PlanCrosswalk $row): void
     {
-        abort_if($row->project_id === null, 404);
-
         $project = $this->writableProject((int) $row->project_id);
 
         abort_unless((int) $row->org_id === (int) $project->org_id, 404);
