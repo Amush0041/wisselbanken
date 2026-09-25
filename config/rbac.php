@@ -36,6 +36,8 @@ return [
     */
     'current_org_session_key' => 'rbac_current_org_id',
 
+    'phase5_backup_confirmed' => filter_var(env('PHASE5_BACKUP_CONFIRMED', false), FILTER_VALIDATE_BOOLEAN),
+
     /*
     |--------------------------------------------------------------------------
     | Registration onboarding bundles (plan §6.1)

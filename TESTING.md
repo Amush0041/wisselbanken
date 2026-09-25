@@ -13,7 +13,7 @@ anything.
 
 ## Known-failing baseline (as of 2026-09-25, Phase 3 Checkpoint 2 run)
 
-The RBAC suite is **568 passed / 3 failed** (Phase 4 destroyUser project-quote refusal baseline). (The earlier
+The RBAC suite is **682 passed / 3 failed** (Phase 5a rewrite plus the Phase 5 QA tests and amendment 3 round 2, 651 before round 2; Phase 4 baseline was 568 / 3). (The earlier
 baseline of 55 passed / 3 failed, 113 assertions was measured **before** the
 projects work.) These 3 failures are pre-existing and independent of any feature work — do not report them as
 a regression you introduced, and do not treat a *new* failure as "probably
@@ -56,10 +56,13 @@ into an unrelated PR by accident.
 - `ProjectSchemaTest` — schema, migration guards, `ProjectMember::enrol()`.
 - `ProjectBackfillTest` — the `projects:backfill` command.
 - `ProjectMembershipTest` — membership and `RbacAudit` quote/project resolution.
-- `ProjectReadPathsTest` — controller read paths, dual-read, H7/H9 rules.
+- `ProjectReadPathsTest` — controller read paths (project-only visibility since Phase 5a: no owner clause, NULL-project quotes visible to nobody), H7/H9 rules.
 - `ProjectWritePathsTest` — Phase 4 write paths (projects, members, quote creation, crosswalk, org-admin member routes), audit and enforce, IDOR per nested route.
 - `ProjectCheckpoint2Test` — Phase 4 Checkpoint 2 changes: owner-level check in `writableQuote`, `destroyUser` created_by refusal and member cleanup, inline Add estimate customers, crosswalk `$projects`.
 - `ProjectDeletionRefusalTest` — B3 refusals on org and user deletion (soft-deleted projects counted).
+- `ProjectDashboardCountersTest` — Phase 5 A5: dashboard quote counter, status chart and recent list equal the quotes index (R vs author-only, removed member, trashed project, NULL project, other org, no org); orders and lists stay author-scoped.
+- `Phase5MigrationsTest` — the three 5b migrations on an in-memory sqlite copy of the pre-5b schema (guards, schema result, re-runs, `down()`); no real database. It needs the PRE-5b schema, so at the 5b step it must keep its own schema builder.
+- `QuoteAuthorScopeGuardTest` — grep-style guard: no `Quote` read by `user_id` under `app/` and `resources/` outside `Quote::scopeVisibleTo`, `destroyUser` and the inert backfill command.
 - `RoutePermissionMapTest` — route-permission map lint.
 - `ProjectTestCase` — shared base for the projects tests.
 - `PermissionServiceTest::test_project_scoping_requires_membership` — rewritten
