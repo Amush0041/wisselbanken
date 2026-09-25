@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Rbac\ApiToken;
 use App\Models\Rbac\Organization;
 use App\Models\Rbac\UserOrgRole;
+use App\Services\Rbac\PermissionService;
 use App\Services\Rbac\ServiceAccountService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -13,7 +14,10 @@ use Illuminate\Support\Facades\Auth;
 
 class ApiTokenController extends Controller
 {
-    public function __construct(private readonly ServiceAccountService $service)
+    public function __construct(
+        private readonly ServiceAccountService $service,
+        private readonly PermissionService $permissions,
+    )
     {
     }
 
@@ -24,6 +28,12 @@ class ApiTokenController extends Controller
         if (! $org) {
             return redirect()->route('user.dashboard')->with('error', 'No organization context.');
         }
+
+        abort_unless(
+            $this->permissions->checkPermission((int) Auth::id(), (int) $org->id, 'delegation_and_impersonation', 'R'),
+            403,
+            'You do not have permission to perform this action.'
+        );
 
         $tokens = ApiToken::where('user_id', Auth::id())
             ->latest()
@@ -38,6 +48,11 @@ class ApiTokenController extends Controller
     {
         $org = $this->currentOrg();
         abort_if(! $org, 403, 'No organization context.');
+        abort_unless(
+            $this->permissions->checkPermission((int) Auth::id(), (int) $org->id, 'delegation_and_impersonation', 'F'),
+            403,
+            'You do not have permission to perform this action.'
+        );
 
         $data = $request->validate([
             'name'       => ['required', 'string', 'max:100'],
@@ -56,7 +71,13 @@ class ApiTokenController extends Controller
 
     public function destroy(ApiToken $apiToken): mixed
     {
-        abort_if($apiToken->user_id !== Auth::id(), 403);
+        $org = $this->currentOrg();
+        abort_if(! $org || $apiToken->user_id !== Auth::id(), 403);
+        abort_unless(
+            $this->permissions->checkPermission((int) Auth::id(), (int) $org->id, 'delegation_and_impersonation', 'F'),
+            403,
+            'You do not have permission to perform this action.'
+        );
 
         $this->service->revokeToken($apiToken->id);
 

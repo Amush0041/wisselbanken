@@ -58,8 +58,8 @@ $_sc       = fn(string $g, string $l) => $_sUser && ($_sAdmin || ($_sOrgId && ap
         </li>
         @endif
 
-        {{-- Customers — user_management:R --}}
-        @if ($_sc('user_management', 'R'))
+        {{-- Customers — quote_rfq_management:R (interim) --}}
+        @if ($_sc('quote_rfq_management', 'R'))
         <li class="menu-item {{ Request::is('customers') || Request::is('customers/*') ? 'active' : '' }}">
             <a href="{{ url('customers') }}" class="menu-link">
                 <i class="menu-icon tf-icons ti ti-users"></i>
@@ -161,12 +161,14 @@ $_sc       = fn(string $g, string $l) => $_sUser && ($_sAdmin || ($_sOrgId && ap
             </a>
             <ul class="menu-sub">
 
-                {{-- Overview — any org member --}}
+                {{-- Overview — user_management:R (shows org-wide team data) --}}
+                @if ($_sc('user_management', 'R'))
                 <li class="menu-item {{ Request::is('org-admin/overview') ? 'active' : '' }}">
                     <a href="{{ route('org-admin.overview') }}" class="menu-link">
                         <div>Overview</div>
                     </a>
                 </li>
+                @endif
 
                 {{-- My Roles — any org member --}}
                 <li class="menu-item {{ Request::is('org-admin/my-roles') ? 'active' : '' }}">

@@ -12,6 +12,7 @@ use App\Models\Rbac\Role;
 use App\Models\Rbac\RoleAssignmentLog;
 use App\Models\Rbac\UserOrgRole;
 use App\Models\User;
+use App\Services\Rbac\PermissionService;
 use App\Support\Rbac\OrganizationType;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -19,6 +20,10 @@ use Illuminate\Support\Facades\DB;
 
 class OrgSettingsController extends Controller
 {
+    public function __construct(private readonly PermissionService $permissions)
+    {
+    }
+
     public function index(): mixed
     {
         $org = $this->currentOrg();
@@ -27,16 +32,29 @@ class OrgSettingsController extends Controller
             return redirect()->route('user.dashboard')->with('error', 'No organization context.');
         }
 
+        abort_unless(
+            $this->permissions->checkPermission((int) Auth::id(), (int) $org->id, 'organization_management', 'R'),
+            403,
+            'You do not have permission to perform this action.'
+        );
+
         $orgTypes = OrganizationType::all();
         $teamSizes = config('rbac.team_sizes', []);
 
-        return view('user.org-admin.settings', compact('org', 'orgTypes', 'teamSizes'));
+        $canManageOrg = $this->permissions->checkPermission((int) Auth::id(), (int) $org->id, 'organization_management', 'F');
+
+        return view('user.org-admin.settings', compact('org', 'orgTypes', 'teamSizes', 'canManageOrg'));
     }
 
     public function update(Request $request): mixed
     {
         $org = $this->currentOrg();
         abort_if(! $org, 403, 'No organization context.');
+        abort_unless(
+            $this->permissions->checkPermission((int) Auth::id(), (int) $org->id, 'organization_management', 'F'),
+            403,
+            'You need full organization management access to change organization settings.'
+        );
 
         $data = $request->validate([
             'name'      => ['required', 'string', 'max:255'],
@@ -53,6 +71,11 @@ class OrgSettingsController extends Controller
     {
         $org = $this->currentOrg();
         abort_if(! $org, 403, 'No organization context.');
+        abort_unless(
+            $this->permissions->checkPermission((int) Auth::id(), (int) $org->id, 'user_management', 'F'),
+            403,
+            'You do not have permission to perform this action.'
+        );
         abort_unless($this->isOwner($org), 403, 'Only the organization owner can delete this organization.');
 
         if (Project::withTrashed()->where('org_id', $org->id)->exists()) {
@@ -80,6 +103,11 @@ class OrgSettingsController extends Controller
     {
         $org = $this->currentOrg();
         abort_if(! $org, 403, 'No organization context.');
+        abort_unless(
+            $this->permissions->checkPermission((int) Auth::id(), (int) $org->id, 'user_management', 'F'),
+            403,
+            'You do not have permission to perform this action.'
+        );
         abort_unless($this->isOwner($org), 403, 'Only the organization owner can transfer ownership.');
 
         $data = $request->validate([

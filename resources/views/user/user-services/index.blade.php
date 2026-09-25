@@ -81,7 +81,9 @@ $canDeleteService = (bool) $_svc('F');
                 <div class="uss-hd">
                     <h5 id="serviceEditorTitle">Create Service</h5>
                     <div class="uss-actions">
+                        @if ($canCreateService)
                         <button type="button" class="uss-cancel" onclick="cancelServiceEdit()">Cancel</button>
+                        @endif
                         @if ($canEditService || $canCreateService)
                         <button type="button" class="uss-save" onclick="saveService()">Save</button>
                         @endif
@@ -104,6 +106,7 @@ $canDeleteService = (bool) $_svc('F');
     const STORE_URL = @json(route('user-services.store'));
     const UPDATE_BASE = @json(url('user-services'));
     const CSRF = @json(csrf_token());
+    const CAN_CREATE = @json($canCreateService);
     let selectedId = null;
     let currentPage = 1;
     let searchDebounceTimer = null;
@@ -163,29 +166,36 @@ $canDeleteService = (bool) $_svc('F');
 
     function renderServiceEditor(service) {
         const s = service || {};
+        if (!CAN_CREATE && !s.id) {
+            document.getElementById('serviceEditorTitle').textContent = 'Service Details';
+            document.getElementById('serviceEditor').innerHTML = '<div class="uss-sec"><div class="uss-item-sub">Select a service to view its details.</div></div>';
+            return;
+        }
+        const dis = CAN_CREATE ? '' : ' disabled';
         document.getElementById('serviceEditorTitle').textContent = s.id ? (s.service_name || s.title || 'Service') : 'Create Service';
-        document.getElementById('serviceDeleteBtn').style.display = s.id ? 'inline-block' : 'none';
+        const delBtn = document.getElementById('serviceDeleteBtn');
+        if (delBtn) delBtn.style.display = s.id ? 'inline-block' : 'none';
         document.getElementById('serviceEditor').innerHTML = `
             <div class="uss-sec"><div class="uss-sec-h sub">Details</div>
                 <div class="uss-grid-2">
-                    <div class="uss-cell"><div class="uss-label">Service Name *</div><input id="svc_name" class="uss-inp" value="${esc(s.service_name || s.title || '')}"><div class="uss-error" id="svc_name_error"></div></div>
-                    <div class="uss-cell"><div class="uss-label">SKU</div><input id="svc_sku" class="uss-inp" value="${esc(s.sku || 'SAC')}"><div class="uss-error" id="svc_sku_error"></div></div>
+                    <div class="uss-cell"><div class="uss-label">Service Name *</div><input id="svc_name" class="uss-inp"${dis} value="${esc(s.service_name || s.title || '')}"><div class="uss-error" id="svc_name_error"></div></div>
+                    <div class="uss-cell"><div class="uss-label">SKU</div><input id="svc_sku" class="uss-inp"${dis} value="${esc(s.sku || 'SAC')}"><div class="uss-error" id="svc_sku_error"></div></div>
                 </div>
             </div>
             <div class="uss-sec"><div class="uss-sec-h sub">Quantity</div>
                 <div class="uss-grid-2">
-                    <div class="uss-cell"><div class="uss-label">Quantity</div><input id="svc_quantity" class="uss-inp" value="${esc(s.quantity || '1')}"><div class="uss-error" id="svc_quantity_error"></div></div>
-                    <div class="uss-cell"><div class="uss-label">Unit Type</div><input id="svc_unit_type" class="uss-inp" value="${esc(s.unit_type || '')}"><div class="uss-error" id="svc_unit_type_error"></div></div>
+                    <div class="uss-cell"><div class="uss-label">Quantity</div><input id="svc_quantity" class="uss-inp"${dis} value="${esc(s.quantity || '1')}"><div class="uss-error" id="svc_quantity_error"></div></div>
+                    <div class="uss-cell"><div class="uss-label">Unit Type</div><input id="svc_unit_type" class="uss-inp"${dis} value="${esc(s.unit_type || '')}"><div class="uss-error" id="svc_unit_type_error"></div></div>
                 </div>
             </div>
             <div class="uss-sec"><div class="uss-sec-h sub">Pricing & Tax</div>
                 <div class="uss-grid-2">
-                    <div class="uss-cell"><div class="uss-label">Rate</div><input id="svc_rate" class="uss-inp" value="${esc(s.default_unit_price || '0')}"><div class="uss-error" id="svc_rate_error"></div></div>
-                    <div class="uss-cell"><div class="uss-label">Default Taxes (Services)</div><input id="svc_tax_label" class="uss-inp" value="${esc(s.tax_label || '')}"><div class="uss-error" id="svc_tax_label_error"></div></div>
+                    <div class="uss-cell"><div class="uss-label">Rate</div><input id="svc_rate" class="uss-inp"${dis} value="${esc(s.default_unit_price || '0')}"><div class="uss-error" id="svc_rate_error"></div></div>
+                    <div class="uss-cell"><div class="uss-label">Default Taxes (Services)</div><input id="svc_tax_label" class="uss-inp"${dis} value="${esc(s.tax_label || '')}"><div class="uss-error" id="svc_tax_label_error"></div></div>
                 </div>
             </div>
             <div class="uss-sec"><div class="uss-sec-h sub">Description</div>
-                <div class="uss-cell" style="border-right:none;"><div class="uss-label">Notes</div><textarea id="svc_notes" class="uss-txt">${esc(s.item_notes || '')}</textarea><div class="uss-error" id="svc_notes_error"></div></div>
+                <div class="uss-cell" style="border-right:none;"><div class="uss-label">Notes</div><textarea id="svc_notes" class="uss-txt"${dis}>${esc(s.item_notes || '')}</textarea><div class="uss-error" id="svc_notes_error"></div></div>
             </div>
         `;
     }

@@ -153,7 +153,15 @@
                                 </td>
                                 <td class="py-3">
                                     @forelse ($memberRoles as $assignment)
+                                        @php
+                                            $coHolders = \Illuminate\Support\Str::contains($assignment->role->slug, ['owner', 'admin'])
+                                                ? $members->where('id', '!=', $member->id)->filter(fn ($m) => $m->org_roles->contains('role_id', $assignment->role_id))->pluck('name')
+                                                : collect();
+                                        @endphp
                                         <span class="role-tag">{{ $assignment->role->name }}</span>
+                                        @if ($coHolders->isNotEmpty())
+                                            <small class="text-warning" title="Also held by {{ $coHolders->implode(', ') }}"><i class="ti ti-users"></i> also held by {{ $coHolders->first() }}{{ $coHolders->count() > 1 ? ' +' . ($coHolders->count() - 1) : '' }}</small>
+                                        @endif
                                     @empty
                                         <span class="text-muted small">No roles</span>
                                     @endforelse

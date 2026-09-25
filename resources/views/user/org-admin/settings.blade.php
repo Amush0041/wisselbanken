@@ -38,7 +38,9 @@
                     <nav class="settings-nav">
                         <p class="text-muted small text-uppercase fw-semibold px-2 mt-2 mb-1" style="font-size:.7rem;letter-spacing:.04em">Configuration</p>
                         <a href="#general" class="active">General</a>
+                        @if ($canManageOrg)
                         <a href="#danger">Danger zone</a>
+                        @endif
                     </nav>
                 </div>
             </div>
@@ -59,14 +61,14 @@
                             <label for="org_name" class="form-label">Organization Name</label>
                             <small class="d-block text-muted mb-1">This is your public display name within the platform.</small>
                             <input type="text" id="org_name" name="name" class="form-control @error('name') is-invalid @enderror"
-                                   value="{{ old('name', $org->name) }}" required>
+                                   value="{{ old('name', $org->name) }}" required @disabled(! $canManageOrg)>
                             @error('name')<div class="invalid-feedback">{{ $message }}</div>@enderror
                         </div>
 
                         <div class="mb-3">
                             <label for="org_type" class="form-label">Organization Type</label>
                             <small class="d-block text-muted mb-1">Select the category that best describes your business entity.</small>
-                            <select id="org_type" name="org_type" class="form-select @error('org_type') is-invalid @enderror" required>
+                            <select id="org_type" name="org_type" class="form-select @error('org_type') is-invalid @enderror" required @disabled(! $canManageOrg)>
                                 @foreach ($orgTypes as [$slug, $label, $purpose])
                                     <option value="{{ $slug }}" @selected(old('org_type', $org->org_type) === $slug)>{{ $label }}</option>
                                 @endforeach
@@ -76,7 +78,7 @@
 
                         <div class="mb-4">
                             <label for="team_size" class="form-label">Team Size</label>
-                            <select id="team_size" name="team_size" class="form-select @error('team_size') is-invalid @enderror" required>
+                            <select id="team_size" name="team_size" class="form-select @error('team_size') is-invalid @enderror" required @disabled(! $canManageOrg)>
                                 @foreach ($teamSizes as $size)
                                     <option value="{{ $size }}" @selected(old('team_size', $org->team_size) === $size)>{{ $size }}</option>
                                 @endforeach
@@ -85,15 +87,16 @@
                         </div>
 
                         <div class="d-flex gap-2">
-                            @canDo('organization_management', 'O')
+                            @if ($canManageOrg)
                             <button type="submit" class="btn text-white" style="background:var(--wb-maroon)">Save Changes</button>
-                            @endCanDo
                             <a href="{{ route('org-admin.settings') }}" class="btn btn-outline-secondary">Discard changes</a>
+                            @endif
                         </div>
                     </form>
                 </div>
             </div>
 
+            @if ($canManageOrg)
             {{-- Danger zone --}}
             <div class="danger-zone" id="danger">
                 <h6 class="fw-semibold text-danger mb-3"><i class="ti ti-alert-triangle me-1"></i> Danger Zone</h6>
@@ -185,12 +188,13 @@
                     </div>
                 </div>
             </div>
+            @endif
         </div>
     </div>
 </div>
 
 @push('scripts')
-@if ($errors->has('new_owner_email'))
+@if ($canManageOrg && $errors->has('new_owner_email'))
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         new bootstrap.Modal(document.getElementById('transferModal')).show();

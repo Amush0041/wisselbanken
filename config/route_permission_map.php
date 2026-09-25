@@ -42,6 +42,8 @@ return [
 
     // user-dashboard and workspace are accessible to any authenticated org member —
     // no permission entry here means RbacAudit passes them through unconditionally.
+    // org-admin/my-roles is intentionally open to every authenticated org member
+    // (self-scope only: it lists the caller's own roles and delegations).
 
     // =========================================================================
     // ORG ADMIN — member & role management (plan §6.3 peel-off)
@@ -50,7 +52,6 @@ return [
     // Pages — read (any org member with user_management:R can see team dashboard)
     'GET org-admin'                               => ['user_management', 'R',  'batch' => 'read'],
     'GET org-admin/overview'                      => ['user_management', 'R',  'batch' => 'read'],
-    'GET org-admin/my-roles'                      => ['user_management', 'R',  'batch' => 'read'],
     'GET org-admin/roles-list'                    => ['user_management', 'R',  'batch' => 'read'],
     'GET org-admin/audit-log'                     => ['audit_and_logging', 'R', 'batch' => 'read'],
     'GET org-admin/settings'                      => ['organization_management', 'R', 'batch' => 'read'],
@@ -68,7 +69,7 @@ return [
     'POST org-admin/roles-list/create'            => ['user_management', 'F',  'batch' => 'admin'],
 
     // Org settings — update & destroy
-    'POST org-admin/settings'                     => ['organization_management', 'O', 'batch' => 'write'],
+    'POST org-admin/settings'                     => ['organization_management', 'F', 'batch' => 'write'],
     'POST org-admin/settings/transfer'            => ['user_management', 'F',  'batch' => 'admin'],
     'DELETE org-admin/settings/delete'            => ['user_management', 'F',  'batch' => 'admin'],
 
@@ -83,7 +84,7 @@ return [
     'DELETE org-admin/api-tokens/{apiToken}'      => ['delegation_and_impersonation', 'F', 'batch' => 'admin'],
 
     // Org Connections (plan §4.5)
-    'GET org-admin/connections'                         => ['organization_management', 'F', 'batch' => 'read'],
+    'GET org-admin/connections'                         => ['organization_management', 'R', 'batch' => 'read'],
     'POST org-admin/connections'                        => ['organization_management', 'F', 'batch' => 'admin'],
     'DELETE org-admin/connections/{orgRelationship}'    => ['organization_management', 'F', 'batch' => 'admin'],
 
@@ -153,9 +154,9 @@ return [
     // CUSTOMERS  (org-scoped buyer data)
     // =========================================================================
 
-    'GET customers'        => ['user_management', 'R', 'batch' => 'read'],
-    'GET customers/list'   => ['user_management', 'R', 'batch' => 'read'],
-    'GET customers/{id}'   => ['user_management', 'R', 'batch' => 'read'],
+    'GET customers'        => ['quote_rfq_management', 'R', 'batch' => 'read'],
+    'GET customers/list'   => ['quote_rfq_management', 'R', 'batch' => 'read'],
+    'GET customers/{id}'   => ['quote_rfq_management', 'R', 'batch' => 'read'],
     'POST customers'       => ['user_management', 'S', 'batch' => 'write'],
     'PUT customers/{id}'   => ['user_management', 'O', 'batch' => 'write'],
     'DELETE customers/{id}'=> ['user_management', 'F', 'batch' => 'approve'],

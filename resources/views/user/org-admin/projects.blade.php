@@ -71,11 +71,13 @@
                                 <span class="member-chip">
                                     <i class="ti ti-user" style="font-size:.7rem;color:var(--wb-maroon)"></i>
                                     {{ optional($pm->user)->name ?? 'Unknown' }}
+                                    @if ($canManageProjects)
                                     <form action="{{ route('org-admin.projects.members.destroy', $pm->id) }}" method="POST"
                                           onsubmit="return confirm('Remove this member from the project?')">
                                         @csrf @method('DELETE')
                                         <button type="submit" title="Remove"><i class="ti ti-x"></i></button>
                                     </form>
+                                    @endif
                                 </span>
                             @empty
                                 <span class="small text-muted fst-italic">No project members assigned</span>
@@ -83,6 +85,7 @@
                         </div>
                     </div>
 
+                    @if ($canManageProjects)
                     <div class="flex-shrink-0" style="min-width:220px">
                         <form action="{{ route('org-admin.projects.members.store') }}" method="POST"
                               class="d-flex gap-1 align-items-center">
@@ -99,6 +102,7 @@
                             </button>
                         </form>
                     </div>
+                    @endif
                 </div>
             </div>
         @endforeach

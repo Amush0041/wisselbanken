@@ -9,6 +9,7 @@ use App\Models\Rbac\Role;
 use App\Models\Rbac\UserOrgRole;
 use App\Models\User;
 use App\Services\Rbac\DelegationService;
+use App\Services\Rbac\PermissionService;
 use App\Services\Rbac\RoleAssignmentService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -20,6 +21,7 @@ class DelegationController extends Controller
     public function __construct(
         private readonly DelegationService $delegations,
         private readonly RoleAssignmentService $assignments,
+        private readonly PermissionService $permissions,
     ) {
     }
 
@@ -30,6 +32,12 @@ class DelegationController extends Controller
         if (! $org) {
             return redirect()->route('user.dashboard')->with('error', 'No organization context.');
         }
+
+        abort_unless(
+            $this->permissions->checkPermission((int) Auth::id(), (int) $org->id, 'delegation_and_impersonation', 'R'),
+            403,
+            'You do not have permission to perform this action.'
+        );
 
         // Delegations granted FROM current user (they delegated their identity)
         $granted = Delegation::with(['toUser', 'grantedBy'])
@@ -58,6 +66,11 @@ class DelegationController extends Controller
     {
         $org = $this->currentOrg();
         abort_if(! $org, 403, 'No organization context.');
+        abort_unless(
+            $this->permissions->checkPermission((int) Auth::id(), (int) $org->id, 'delegation_and_impersonation', 'O'),
+            403,
+            'You do not have permission to perform this action.'
+        );
 
         $data = $request->validate([
             'to_user_id' => ['required', 'integer', Rule::exists('users', 'id'), Rule::notIn([Auth::id()])],
@@ -101,6 +114,11 @@ class DelegationController extends Controller
     {
         $org = $this->currentOrg();
         abort_if(! $org || $delegation->from_user_id !== Auth::id(), 403);
+        abort_unless(
+            $this->permissions->checkPermission((int) Auth::id(), (int) $org->id, 'delegation_and_impersonation', 'O'),
+            403,
+            'You do not have permission to perform this action.'
+        );
 
         $this->delegations->revoke($delegation->id);
 

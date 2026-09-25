@@ -39,7 +39,7 @@
             @if ($rfqs->isEmpty())
                 <div class="text-center py-5 text-muted">
                     <i class="ti ti-mail-forward" style="font-size:2rem"></i>
-                    <p class="mt-2 mb-0">No RFQs yet. <a href="{{ route('rfq.create') }}">Send your first one.</a></p>
+                    <p class="mt-2 mb-0">No RFQs yet.@canDo('quote_rfq_management', 'S') <a href="{{ route('rfq.create') }}">Send your first one.</a>@endCanDo</p>
                 </div>
             @else
             <div class="table-responsive">

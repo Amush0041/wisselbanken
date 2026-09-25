@@ -73,7 +73,7 @@
                                 @endif
                             </div>
                         </div>
-                        @if ($rel->is_active)
+                        @if ($rel->is_active && $canManageConnections)
                             <form action="{{ route('org-admin.connections.destroy', $rel->id) }}" method="POST"
                                   onsubmit="return confirm('Deactivate this connection?')">
                                 @csrf @method('DELETE')
@@ -118,6 +118,7 @@
 
         {{-- Right: add new connection --}}
         <div class="col-lg-4">
+            @if ($canManageConnections)
             <div class="card border-0 shadow-sm">
                 <div class="card-header bg-transparent py-3">
                     <h6 class="mb-0 fw-semibold"><i class="ti ti-plug me-1" style="color:var(--wb-maroon)"></i> Add New Connection</h6>
@@ -166,6 +167,7 @@
                     </form>
                 </div>
             </div>
+            @endif
 
             <div class="card border-0 shadow-sm mt-3">
                 <div class="card-body py-3">

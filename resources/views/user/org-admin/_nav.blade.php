@@ -8,10 +8,12 @@ $_navCan   = fn(string $g, string $l) => $_navUser && ($_navAdmin || ($_navOrgId
 
 <nav class="oa-nav d-flex gap-1 mt-3 flex-wrap mb-4">
 
-    {{-- Overview — any org member --}}
+    {{-- Overview — user_management:R (shows org-wide team data) --}}
+    @if ($_navCan('user_management', 'R'))
     <a href="{{ route('org-admin.overview') }}" {{ Request::is('org-admin/overview') ? 'class=active' : '' }}>
         <i class="ti ti-layout-dashboard"></i> Overview
     </a>
+    @endif
 
     {{-- Team — user_management:R --}}
     @if ($_navCan('user_management', 'R'))
@@ -40,7 +42,7 @@ $_navCan   = fn(string $g, string $l) => $_navUser && ($_navAdmin || ($_navOrgId
     @endif
 
     {{-- Connections — org-to-org trading partnerships (buyer→seller, GC→subcontractor, etc.) --}}
-    @if ($_navCan('user_management', 'F'))
+    @if ($_navCan('organization_management', 'R'))
     <a href="{{ route('org-admin.connections.index') }}" {{ Request::is('org-admin/connections*') ? 'class=active' : '' }}>
         <i class="ti ti-network"></i> Connections
     </a>

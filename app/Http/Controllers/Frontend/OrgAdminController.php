@@ -54,6 +54,7 @@ class OrgAdminController extends Controller
             return redirect()->route('user.dashboard')
                 ->with('error', 'You are not a member of any organization yet.');
         }
+        $this->requireOrgLevel($org, 'user_management', 'R');
 
         // Users in this org with their active roles.
         $members = User::whereIn('id', function ($q) use ($org) {
@@ -82,6 +83,7 @@ class OrgAdminController extends Controller
     {
         $org = $this->currentOrg();
         abort_if(! $org, 403, 'No organization context.');
+        $this->requireOrgLevel($org, 'user_management', 'F');
 
         $data = $request->validate([
             'user_id' => ['required', 'integer', Rule::exists('users', 'id')],
@@ -123,6 +125,7 @@ class OrgAdminController extends Controller
     {
         $org = $this->currentOrg();
         abort_if(! $org, 403, 'No organization context.');
+        $this->requireOrgLevel($org, 'user_management', 'F');
 
         $data = $request->validate([
             'role_id' => ['required', 'integer', Rule::exists('roles', 'id')],
@@ -143,6 +146,7 @@ class OrgAdminController extends Controller
     {
         $org = $this->currentOrg();
         abort_if(! $org || $userOrgRole->org_id !== $org->id, 403, 'Not in your organization.');
+        $this->requireOrgLevel($org, 'user_management', 'F');
 
         $this->assignments->deactivate($userOrgRole->id, Auth::id());
 
@@ -159,6 +163,7 @@ class OrgAdminController extends Controller
         if (! $org) {
             return redirect()->route('user.dashboard')->with('error', 'No organization context.');
         }
+        $this->requireOrgLevel($org, 'user_management', 'R');
 
         $mfrOrgTypes = config('rbac.onboarding.manufacturer_org_types', ['manufacturer']);
         $rolesQuery  = Role::whereIn('phase', ['P1', 'P2'])
@@ -212,6 +217,7 @@ class OrgAdminController extends Controller
     {
         $org = $this->currentOrg();
         abort_if(! $org, 403, 'No organization context.');
+        $this->requireOrgLevel($org, 'user_management', 'F');
 
         $data = $request->validate([
             'role_id'             => ['required', 'integer', 'exists:roles,id'],
@@ -249,6 +255,7 @@ class OrgAdminController extends Controller
     {
         $org = $this->currentOrg();
         abort_if(! $org, 403, 'No organization context.');
+        $this->requireOrgLevel($org, 'user_management', 'F');
 
         $data = $request->validate([
             'name'        => ['required', 'string', 'max:120'],
@@ -282,6 +289,7 @@ class OrgAdminController extends Controller
         if (! $org) {
             return redirect()->route('user.dashboard')->with('error', 'No organization context.');
         }
+        $this->requireOrgLevel($org, 'user_management', 'R', 'You need team read access to view the organization overview.');
 
         $memberIds = UserOrgRole::where('org_id', $org->id)->where('is_active', true)->pluck('user_id')->unique();
 
@@ -357,6 +365,7 @@ class OrgAdminController extends Controller
         if (! $org) {
             return redirect()->route('user.dashboard')->with('error', 'No organization context.');
         }
+        $this->requireOrgLevel($org, 'audit_and_logging', 'R');
 
         $query = RoleAssignmentLog::with(['targetUser', 'role', 'performedBy'])
             ->where('org_id', $org->id);
@@ -394,6 +403,7 @@ class OrgAdminController extends Controller
         if (! $org) {
             return response()->json(['error' => 'No active organization.'], 403);
         }
+        $this->requireOrgLevel($org, 'user_management', 'F');
 
         $data = $request->validate([
             'email'      => ['required', 'email', 'max:255'],
@@ -477,6 +487,8 @@ class OrgAdminController extends Controller
             return redirect()->route('user.dashboard')->with('error', 'No organization context.');
         }
 
+        $this->requireOrgLevel($org, 'organization_management', 'R', 'You need organization management read access to view connections.');
+
         $outgoing = OrgRelationship::with('toOrganization')
             ->where('from_org_id', $org->id)
             ->orderBy('is_active', 'desc')
@@ -503,8 +515,10 @@ class OrgAdminController extends Controller
 
         $priorities = ['Critical', 'High', 'Medium'];
 
+        $canManageConnections = $this->permissions->checkPermission((int) Auth::id(), (int) $org->id, 'organization_management', 'F');
+
         return view('user.org-admin.connections', compact(
-            'org', 'outgoing', 'incoming', 'allOrgs', 'relationshipTypes', 'priorities'
+            'org', 'outgoing', 'incoming', 'allOrgs', 'relationshipTypes', 'priorities', 'canManageConnections'
         ));
     }
 
@@ -512,6 +526,7 @@ class OrgAdminController extends Controller
     {
         $org = $this->currentOrg();
         abort_if(! $org, 403, 'No organization context.');
+        $this->requireOrgLevel($org, 'organization_management', 'F', 'You need full organization management access to change connections.');
 
         $data = $request->validate([
             'to_org_id'         => ['required', 'integer', 'exists:organizations,id', Rule::notIn([$org->id])],
@@ -544,6 +559,7 @@ class OrgAdminController extends Controller
     {
         $org = $this->currentOrg();
         abort_if(! $org || $orgRelationship->from_org_id !== $org->id, 403, 'Not your connection.');
+        $this->requireOrgLevel($org, 'organization_management', 'F', 'You need full organization management access to change connections.');
 
         $orgRelationship->update(['is_active' => false]);
 
@@ -579,13 +595,16 @@ class OrgAdminController extends Controller
 
         $members = User::whereIn('id', $memberIds)->orderBy('name')->get(['id', 'name', 'email']);
 
-        return view('user.org-admin.projects', compact('org', 'projects', 'members'));
+        $canManageProjects = $this->permissions->checkPermission((int) Auth::id(), (int) $org->id, 'project_management', 'F');
+
+        return view('user.org-admin.projects', compact('org', 'projects', 'members', 'canManageProjects'));
     }
 
     public function addProjectMember(Request $request): RedirectResponse
     {
         $org = $this->currentOrg();
         abort_if(! $org, 403, 'No organization context.');
+        $this->requireOrgLevel($org, 'project_management', 'F', 'You need full project management access to change project members.');
 
         $data = $request->validate([
             'project_id' => ['required', 'integer'],
@@ -616,12 +635,22 @@ class OrgAdminController extends Controller
     {
         $org = $this->currentOrg();
         abort_if(! $org || $projectMember->org_id !== $org->id, 403, 'Not in your organization.');
+        $this->requireOrgLevel($org, 'project_management', 'F', 'You need full project management access to change project members.');
         $project = Project::where('org_id', $org->id)->findOrFail($projectMember->project_id);
         $this->requireProjectFull($project, $org);
 
         $projectMember->update(['is_active' => false]);
 
         return back()->with('success', 'Member removed from project.');
+    }
+
+    private function requireOrgLevel(Organization $org, string $group, string $level, string $message = 'You do not have permission to perform this action.'): void
+    {
+        abort_unless(
+            $this->permissions->checkPermission((int) Auth::id(), (int) $org->id, $group, $level),
+            403,
+            $message
+        );
     }
 
     private function requireProjectFull(Project $project, Organization $org): void
