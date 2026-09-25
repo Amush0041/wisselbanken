@@ -15,7 +15,7 @@ per a client-specified implementation plan.
   is <= the required rank.
 - `projectId` in `checkPermission()` is a `projects.id`. A project is its own
   entity (`projects` table: org_id, name, status, address, bid_due_at); a quote
-  belongs to a project via `quotes.project_id` (nullable until Phase 5).
+  belongs to a project via `quotes.project_id` (nullable until the Phase 5b migration runs).
   Project-scoping is enforced via `project_members` (`project_id`, user_id,
   org_id, is_active); membership org must equal `projects.org_id`. Legacy
   quote-only rows (`quote_id`, `project_id` NULL) never grant access; the
@@ -116,7 +116,20 @@ Phase 5 (irreversible schema tightening) goes back to STRICT.
 
 ### Projects feature status
 
-Phases 1-4 are committed on `feature/projects-entity` (not pushed). Phase 5
-(irreversible schema tightening) is not started and goes back to STRICT mode.
-Phases 3-4 must never deploy without the Phase 2 backfill. Nothing has been run on production; the gates
-(B1, B5, B12, backup, pre-flight queries) are listed in the memory note.
+Phases 1-4 are committed on `feature/projects-entity`; Phase 5 (built in STRICT
+mode) is committed on `feature/projects-entity-phase5`. Neither branch is pushed.
+
+- **5a (code, `344e857`):** quote visibility is project-only. `Quote::visibleTo`
+  = project visible AND (`estimate_management` R OR author); NULL-project quotes
+  are visible to nobody. Deploying 5a with any NULL `quotes.project_id` hides
+  those quotes from everyone, so it needs the Phase 2 backfill first.
+- **5b (migrations, `0728de0`):** three irreversible migrations
+  (`2026_09_25_*`), never run. They refuse outside maintenance mode, without
+  `PHASE5_BACKUP_CONFIRMED`, or when pre-conditions fail. The 5a upload must
+  not contain them; run 5b only after a 14-day soak of 5a.
+- `ProjectBackfillTest` and the legacy schema tests are deleted with 5b; the
+  backfill command is removed 30 days after 5b.
+
+Phases 3-5 must never deploy without the Phase 2 backfill. Nothing has been run
+on production; the gates (B1, B5, B12, backup, pre-flight queries) are listed in
+the memory note. Plan and review trail: `.claude/tasks/projects-entity/`.
