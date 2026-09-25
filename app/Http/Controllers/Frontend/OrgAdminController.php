@@ -11,6 +11,7 @@ use App\Models\Rbac\Delegation;
 use App\Models\Rbac\OrgInvite;
 use App\Models\Rbac\OrgRelationship;
 use App\Models\Rbac\ProjectMember;
+use App\Models\Rbac\ProjectMemberLog;
 use App\Models\Rbac\AuditLog as RbacAuditLog;
 use App\Models\Rbac\RoleAssignmentLog;
 use App\Models\Rbac\Organization;
@@ -394,7 +395,14 @@ class OrgAdminController extends Controller
             ->paginate(25, ['*'], 'epage')
             ->withQueryString();
 
-        return view('user.org-admin.audit-log', compact('org', 'history', 'members', 'enforcementLog'));
+        $projectMemberLog = ProjectMemberLog::with(['project', 'targetUser', 'performedBy'])
+            ->where('org_id', $org->id)
+            ->latest('created_at')
+            ->latest('id')
+            ->paginate(20, ['*'], 'ppage')
+            ->withQueryString();
+
+        return view('user.org-admin.audit-log', compact('org', 'history', 'members', 'enforcementLog', 'projectMemberLog'));
     }
 
     public function generateInvite(Request $request): JsonResponse
@@ -639,7 +647,7 @@ class OrgAdminController extends Controller
         $project = Project::where('org_id', $org->id)->findOrFail($projectMember->project_id);
         $this->requireProjectFull($project, $org);
 
-        $projectMember->update(['is_active' => false]);
+        $projectMember->deactivate((int) Auth::id());
 
         return back()->with('success', 'Member removed from project.');
     }

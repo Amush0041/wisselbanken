@@ -51,7 +51,7 @@ class ProjectMemberController extends Controller
         $project = $this->manageableProject($project);
         abort_unless((int) $projectMember->project_id === (int) $project->id, 404);
 
-        $projectMember->update(['is_active' => false]);
+        $projectMember->deactivate((int) Auth::id());
 
         if ($request->expectsJson()) {
             return response()->json(['success' => true]);

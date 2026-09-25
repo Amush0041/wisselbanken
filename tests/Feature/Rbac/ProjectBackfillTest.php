@@ -315,6 +315,20 @@ class ProjectBackfillTest extends RbacTestCase
         $this->assertSame('3', $g[0]['quote_count']);
     }
 
+    public function test_backfill_writes_no_project_member_logs(): void
+    {
+        $org = $this->org();
+        $a = $this->owner($org);
+        $b = $this->owner($org);
+        $q1 = $this->q($a, ['project_name' => 'Main St']);
+        $this->legacy($q1, $b, $org);
+
+        $this->assertSame(0, $this->backfill());
+
+        $this->assertGreaterThan(0, DB::table('project_members')->whereNotNull('project_id')->count(), 'the backfill did create project-keyed members');
+        $this->assertSame(0, DB::table('project_member_logs')->count());
+    }
+
     public function test_02_two_owners_same_name_same_org_get_two_projects(): void
     {
         $org = $this->org();

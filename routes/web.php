@@ -225,23 +225,7 @@ Route::get('get-pallet-checkout-data', [PalletProductController::class, 'getPall
     Route::put('user-services/{id}', [UserSavedServiceController::class, 'update'])->name('user-services.update');
     Route::delete('user-services/{id}', [UserSavedServiceController::class, 'destroy'])->name('user-services.destroy');
 
-// Test route for session debugging
-Route::get('test-session', function() {
-    $testValue = session()->get('test_value', 'not_set');
-    if ($testValue === 'not_set') {
-        session()->put('test_value', 'test_' . time());
-        $testValue = session()->get('test_value');
-    }
-    
-    return response()->json([
-        'session_id' => session()->getId(),
-        'test_value' => $testValue,
-        'all_keys' => array_keys(session()->all()),
-        'pallet_address' => session()->get('pallet_address'),
-        'pallet' => session()->get('pallet', [])
-    ]);
-});
-  
+
     // checkout
     Route::get('checkout', [CheckoutController::class, 'checkout'])->name('checkout');
     Route::post('/checkout/process', [CheckoutController::class, 'processCheckout'])->name('checkout.process');

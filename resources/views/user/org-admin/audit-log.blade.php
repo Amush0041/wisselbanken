@@ -158,6 +158,57 @@
         @endif
     </div>
 
+    {{-- Project membership changes --}}
+    <h6 class="fw-semibold mt-4 mb-2">Project membership changes</h6>
+    <div class="card border-0 shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="ps-4 py-3 small">Date/Time</th>
+                            <th class="py-3 small">Project</th>
+                            <th class="py-3 small">Member</th>
+                            <th class="py-3 small">Action</th>
+                            <th class="py-3 small">By</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @forelse ($projectMemberLog as $pml)
+                            <tr>
+                                <td class="ps-4 py-3">
+                                    <div class="fw-medium small">{{ $pml->created_at->format('M d, Y') }}</div>
+                                    <small class="text-muted">{{ $pml->created_at->format('H:i') }} · {{ $pml->created_at->diffForHumans() }}</small>
+                                </td>
+                                <td class="py-3 small">{{ optional($pml->project)->name ?? 'Deleted project' }}</td>
+                                <td class="py-3 small">{{ optional($pml->targetUser)->name ?? 'Unknown' }}</td>
+                                <td class="py-3">
+                                    @if ($pml->action === 'removed')
+                                        <span class="badge bg-label-danger">Removed</span>
+                                    @elseif ($pml->action === 'reactivated')
+                                        <span class="badge bg-label-info">Re-activated</span>
+                                    @else
+                                        <span class="badge bg-label-success">Added</span>
+                                    @endif
+                                </td>
+                                <td class="py-3"><small class="text-muted">{{ optional($pml->performedBy)->name ?? 'System' }}</small></td>
+                            </tr>
+                        @empty
+                            <tr>
+                                <td colspan="5" class="text-center py-4 text-muted small">No project membership changes recorded</td>
+                            </tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        @if ($projectMemberLog->hasPages())
+            <div class="card-footer bg-white border-top py-3 px-4">
+                {{ $projectMemberLog->withQueryString()->links() }}
+            </div>
+        @endif
+    </div>
+
     @else
 
     {{-- Enforcement log --}}
