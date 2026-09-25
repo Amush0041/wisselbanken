@@ -1812,45 +1812,68 @@ window.RBAC_CAN.ldCanRemoveListItem = {{ $ldCanRemoveItem ? 'true' : 'false' }};
             ? listIdOrEl.getAttribute('data-list-id')
             : listIdOrEl;
 
-        Swal.fire({
-            title: 'Create Estimate',
-            text: 'Do you want to create a quote from this list?',
-            icon: 'question',
-            showCancelButton: true,
-            confirmButtonText: 'Yes, create estimate',
-            cancelButtonText: 'Cancel',
-            customClass: {
-                confirmButton: 'btn btn-primary',
-                cancelButton: 'btn btn-secondary'
+        $.getJSON(@json(route('projects.list'))).done(function(res) {
+            const projects = Array.isArray(res.projects) ? res.projects : [];
+            if (!projects.length) {
+                Swal.fire('No projects', 'Create a project first, then create an estimate from this list.', 'info');
+                return;
             }
-        }).then((result) => {
-            if (result.isConfirmed) {
-                $.ajax({
-                    url: `{{ url('quotes/create-from-list') }}/${listId}`,
-                    method: 'POST',
-                    data: {
-                        _token: '{{ csrf_token() }}'
-                    },
-                    success: function(response) {
-                        if (response.success) {
-                            Swal.fire({
-                                title: 'Success!',
-                                text: response.message,
-                                icon: 'success',
-                                confirmButtonText: 'View Estimate',
-                                showCancelButton: true,
-                                cancelButtonText: 'Stay Here'
-                            }).then((result) => {
-                                if (result.isConfirmed) {
-                                    window.location.href = '{{ route("quotes.index") }}';
-                                }
-                            });
+            const inputOptions = {};
+            projects.forEach(function(p) { inputOptions[String(p.id)] = p.name || ('Project #' + p.id); });
+
+            Swal.fire({
+                title: 'Create Estimate',
+                text: 'Select the project for the new estimate.',
+                icon: 'question',
+                input: 'select',
+                inputOptions: inputOptions,
+                inputPlaceholder: 'Select project',
+                inputValidator: function(value) {
+                    if (!value) return 'Please select project';
+                },
+                showCancelButton: true,
+                confirmButtonText: 'Yes, create estimate',
+                cancelButtonText: 'Cancel',
+                customClass: {
+                    confirmButton: 'btn btn-primary',
+                    cancelButton: 'btn btn-secondary'
+                }
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    submitQuoteFromList(listId, result.value);
+                }
+            });
+        }).fail(function() {
+            Swal.fire('Error!', 'Failed to load projects', 'error');
+        });
+    }
+
+    function submitQuoteFromList(listId, projectId) {
+        const urlTemplate = @json(route('projects.quotes.create-from-list', ['project' => '__PROJECT__', 'listId' => '__LIST__']));
+        $.ajax({
+            url: urlTemplate.replace('__PROJECT__', encodeURIComponent(projectId)).replace('__LIST__', encodeURIComponent(listId)),
+            method: 'POST',
+            data: {
+                _token: '{{ csrf_token() }}'
+            },
+            success: function(response) {
+                if (response.success) {
+                    Swal.fire({
+                        title: 'Success!',
+                        text: response.message,
+                        icon: 'success',
+                        confirmButtonText: 'View Estimate',
+                        showCancelButton: true,
+                        cancelButtonText: 'Stay Here'
+                    }).then((result) => {
+                        if (result.isConfirmed) {
+                            window.location.href = '{{ route("quotes.index") }}';
                         }
-                    },
-                    error: function(xhr) {
-                        Swal.fire('Error!', xhr.responseJSON?.message || 'Failed to create quote', 'error');
-                    }
-                });
+                    });
+                }
+            },
+            error: function(xhr) {
+                Swal.fire('Error!', xhr.responseJSON?.message || 'Failed to create quote', 'error');
             }
         });
     }

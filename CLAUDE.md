@@ -26,7 +26,7 @@ per a client-specified implementation plan.
   unresolved scope fails closed as `project_unresolved`.
 - `plan_crosswalk` (org_id + quote_id scoped; maps a buyer's plan line code ->
   WisselBanken SKU -> manufacturer part number) has a nullable `project_id`
-  column; moving it to project scope is Phase 4. Permission-checked via the
+  column; it is keyed on `project_id` for writes since Phase 4. Permission-checked via the
   `estimate_management` group.
 - Every new/changed route **must** get an entry in `config/route_permission_map.php`
   (permission group, required level, batch). The operative RBAC mode is the DB
@@ -116,7 +116,7 @@ Phase 5 (irreversible schema tightening) goes back to STRICT.
 
 ### Projects feature status
 
-Phases 1-3 are committed on `feature/projects-entity` (not pushed). Phase 4 is
-on hold until the human says to start. Phase 3 must never deploy without the
-Phase 2 backfill and Phase 4. Nothing has been run on production; the gates
+Phases 1-4 are committed on `feature/projects-entity` (not pushed). Phase 5
+(irreversible schema tightening) is not started and goes back to STRICT mode.
+Phases 3-4 must never deploy without the Phase 2 backfill. Nothing has been run on production; the gates
 (B1, B5, B12, backup, pre-flight queries) are listed in the memory note.

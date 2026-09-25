@@ -19,7 +19,7 @@
 <div class="container-xxl flex-grow-1 container-p-y">
     <div class="mb-1">
         <h4 class="mb-0 fw-bold">Project Access</h4>
-        <p class="text-muted small mb-0">Control which team members can access each estimate/quote in <strong>{{ $org->name }}</strong></p>
+        <p class="text-muted small mb-0">Control which team members can access each project in <strong>{{ $org->name }}</strong></p>
     </div>
 
     @include('user.org-admin._nav')
@@ -37,43 +37,37 @@
         </div>
     @endif
 
-    @if ($quotes->isEmpty())
+    @if ($projects->isEmpty())
         <div class="card border-0 shadow-sm text-center py-5 text-muted">
-            <i class="ti ti-file-invoice fs-2 d-block mb-2"></i>
-            <p class="mb-1">No estimates found for any team member in this organization.</p>
-            <small>Estimates created by org members will appear here once available.</small>
+            <i class="ti ti-folders fs-2 d-block mb-2"></i>
+            <p class="mb-1">No projects found in this organization.</p>
+            <small>Projects created by org members will appear here.</small>
         </div>
     @else
         <div class="card border-0 shadow-sm mb-3">
             <div class="card-body py-3">
                 <p class="small text-muted mb-0">
                     <i class="ti ti-info-circle me-1"></i>
-                    Project membership controls quote-level access. When RBAC switches to <strong>enforce</strong> mode, only listed members will be able to open a quote — in addition to holding the required role permission. Currently running in <strong>audit mode</strong> (no access is blocked yet).
+                    Project membership controls project-level access. Only listed members can open a project, in addition to holding the required role permission.
                 </p>
             </div>
         </div>
 
-        @foreach ($quotes as $quote)
+        @foreach ($projects as $project)
             <div class="project-card">
                 <div class="d-flex align-items-start justify-content-between gap-3 flex-wrap">
                     <div class="flex-grow-1 min-w-0">
                         <div class="d-flex align-items-center gap-2 flex-wrap">
-                            <a href="{{ route('project.workspace', $quote->id) }}" class="fw-semibold text-body">
-                                {{ $quote->name ?: ('Estimate #' . $quote->id) }}
-                            </a>
-                            @if ($quote->status)
-                                <span class="badge bg-label-secondary" style="font-size:.65rem">{{ ucfirst($quote->status) }}</span>
-                            @endif
+                            <span class="fw-semibold">{{ $project->name }}</span>
+                            <span class="badge bg-label-secondary" style="font-size:.65rem">{{ ucfirst(str_replace('_', ' ', $project->status)) }}</span>
                         </div>
                         <div class="small text-muted mt-1">
-                            Owner: <strong>{{ optional($quote->user)->name ?? 'Unknown' }}</strong>
-                            &nbsp;·&nbsp; {{ $quote->items_count }} line item(s)
-                            &nbsp;·&nbsp; Created {{ $quote->created_at->format('M d, Y') }}
+                            {{ $project->quotes_count }} estimate(s)
+                            &nbsp;·&nbsp; Created {{ $project->created_at->format('M d, Y') }}
                         </div>
 
-                        {{-- Current project members --}}
                         <div class="mt-2 d-flex align-items-center gap-1 flex-wrap">
-                            @forelse ($quote->project_members_list as $pm)
+                            @forelse ($project->project_members_list as $pm)
                                 <span class="member-chip">
                                     <i class="ti ti-user" style="font-size:.7rem;color:var(--wb-maroon)"></i>
                                     {{ optional($pm->user)->name ?? 'Unknown' }}
@@ -89,12 +83,11 @@
                         </div>
                     </div>
 
-                    {{-- Add member inline form --}}
                     <div class="flex-shrink-0" style="min-width:220px">
                         <form action="{{ route('org-admin.projects.members.store') }}" method="POST"
                               class="d-flex gap-1 align-items-center">
                             @csrf
-                            <input type="hidden" name="quote_id" value="{{ $quote->id }}">
+                            <input type="hidden" name="project_id" value="{{ $project->id }}">
                             <select name="user_id" class="form-select form-select-sm" required style="font-size:.78rem">
                                 <option value="">Add member…</option>
                                 @foreach ($members as $m)

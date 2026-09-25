@@ -13,7 +13,7 @@ anything.
 
 ## Known-failing baseline (as of 2026-09-25, Phase 3 Checkpoint 2 run)
 
-The RBAC suite is **383 passed / 3 failed, 3094 assertions**. (The earlier
+The RBAC suite is **566 passed / 3 failed** (Phase 4 destroyUser project-quote refusal baseline). (The earlier
 baseline of 55 passed / 3 failed, 113 assertions was measured **before** the
 projects work.) These 3 failures are pre-existing and independent of any feature work — do not report them as
 a regression you introduced, and do not treat a *new* failure as "probably
@@ -57,6 +57,9 @@ into an unrelated PR by accident.
 - `ProjectBackfillTest` — the `projects:backfill` command.
 - `ProjectMembershipTest` — membership and `RbacAudit` quote/project resolution.
 - `ProjectReadPathsTest` — controller read paths, dual-read, H7/H9 rules.
+- `ProjectWritePathsTest` — Phase 4 write paths (projects, members, quote creation, crosswalk, org-admin member routes), audit and enforce, IDOR per nested route.
+- `ProjectCheckpoint2Test` — Phase 4 Checkpoint 2 changes: owner-level check in `writableQuote`, `destroyUser` created_by refusal and member cleanup, inline Add estimate customers, crosswalk `$projects`.
+- `ProjectDeletionRefusalTest` — B3 refusals on org and user deletion (soft-deleted projects counted).
 - `RoutePermissionMapTest` — route-permission map lint.
 - `ProjectTestCase` — shared base for the projects tests.
 - `PermissionServiceTest::test_project_scoping_requires_membership` — rewritten

@@ -139,8 +139,19 @@ Route::group(['middleware' => ['auth','verified','checkRole:user']], function() 
     Route::get('org-admin/projects', [\App\Http\Controllers\Frontend\OrgAdminController::class, 'projects'])->name('org-admin.projects.index');
     Route::post('org-admin/projects/members', [\App\Http\Controllers\Frontend\OrgAdminController::class, 'addProjectMember'])->name('org-admin.projects.members.store');
     Route::delete('org-admin/projects/members/{projectMember}', [\App\Http\Controllers\Frontend\OrgAdminController::class, 'removeProjectMember'])->name('org-admin.projects.members.destroy');
-    /* Project Workspace (doc §6.5) */
-    Route::get('projects/{quote}/workspace', [\App\Http\Controllers\Frontend\ProjectWorkspaceController::class, 'show'])->name('project.workspace');
+    /* Projects (entity CRUD, members, page — doc §6.5) */
+    Route::get('projects', [\App\Http\Controllers\Frontend\ProjectController::class, 'index'])->name('projects.index');
+    Route::get('projects/list', [\App\Http\Controllers\Frontend\ProjectController::class, 'list'])->name('projects.list');
+    Route::post('projects', [\App\Http\Controllers\Frontend\ProjectController::class, 'store'])->name('projects.store');
+    Route::get('projects/{project}', [\App\Http\Controllers\Frontend\ProjectWorkspaceController::class, 'show'])->name('projects.show');
+    Route::put('projects/{project}', [\App\Http\Controllers\Frontend\ProjectController::class, 'update'])->name('projects.update');
+    Route::delete('projects/{project}', [\App\Http\Controllers\Frontend\ProjectController::class, 'destroy'])->name('projects.destroy');
+    Route::post('projects/{project}/members', [\App\Http\Controllers\Frontend\ProjectMemberController::class, 'store'])->name('projects.members.store');
+    Route::delete('projects/{project}/members/{projectMember}', [\App\Http\Controllers\Frontend\ProjectMemberController::class, 'destroy'])->name('projects.members.destroy');
+    Route::post('projects/{project}/quotes', [QuoteController::class, 'store'])->name('projects.quotes.store');
+    Route::post('projects/{project}/quotes/create-from-list/{listId}', [QuoteController::class, 'createFromList'])->name('projects.quotes.create-from-list');
+    Route::post('projects/{project}/crosswalk', [PlanCrosswalkController::class, 'store'])->name('projects.crosswalk.store');
+    Route::get('projects/{quote}/workspace', [\App\Http\Controllers\Frontend\ProjectWorkspaceController::class, 'legacyRedirect'])->name('project.workspace');
     /* Org Settings */
     Route::get('org-admin/settings', [\App\Http\Controllers\Frontend\OrgSettingsController::class, 'index'])->name('org-admin.settings');
     Route::post('org-admin/settings', [\App\Http\Controllers\Frontend\OrgSettingsController::class, 'update'])->name('org-admin.settings.update');
@@ -179,8 +190,6 @@ Route::get('get-pallet-checkout-data', [PalletProductController::class, 'getPall
     Route::get('quotes/product-variations', [QuoteController::class, 'getProductVariationsForEstimate'])->name('quotes.product-variations');
     Route::get('quotes/services', [QuoteController::class, 'getServicesForEstimate'])->name('quotes.services');
     Route::get('quotes/{id}/details', [QuoteController::class, 'getEstimateDetails'])->name('quotes.details');
-    Route::post('quotes/create-from-list/{listId}', [QuoteController::class, 'createFromList'])->name('quotes.create-from-list');
-    Route::post('quotes', [QuoteController::class, 'store'])->name('quotes.store');
     Route::put('quotes/{id}', [QuoteController::class, 'update'])->name('quotes.update');
     Route::put('quotes/{id}/editor', [QuoteController::class, 'saveEditor'])->name('quotes.save-editor');
     Route::put('quotes/{quoteId}/items/{itemId}', [QuoteController::class, 'updateItem'])->name('quotes.update-item');
@@ -262,7 +271,6 @@ Route::get('test-session', function() {
 
     // Plan crosswalk (doc §4.6)
     Route::get('plan-crosswalk', [PlanCrosswalkController::class, 'index'])->name('plan-crosswalk.index');
-    Route::post('plan-crosswalk', [PlanCrosswalkController::class, 'store'])->name('plan-crosswalk.store');
     Route::put('plan-crosswalk/{planCrosswalk}', [PlanCrosswalkController::class, 'update'])->name('plan-crosswalk.update');
     Route::delete('plan-crosswalk/{planCrosswalk}', [PlanCrosswalkController::class, 'destroy'])->name('plan-crosswalk.destroy');
 

@@ -42,9 +42,9 @@ class ProjectReadPathsTest extends ProjectTestCase
 
     // ---- helpers ----------------------------------------------------------------
 
-    private function asJson(User $u, string $method, string $uri, array $session = [])
+    private function asJson(User $u, string $method, string $uri, array $session = [], array $data = [])
     {
-        return $this->actingAs($u)->withSession($session)->json($method, $uri);
+        return $this->actingAs($u)->withSession($session)->json($method, $uri, $data);
     }
 
     private function orgSession(int $orgId): array
@@ -100,15 +100,22 @@ class ProjectReadPathsTest extends ProjectTestCase
     public function test_route_allowed_for_a_member_reaches_the_controller(string $method, string $tpl, string $level): void
     {
         $this->setMode('enforce');
+        $this->item($this->q1, 10);
 
         $r = $this->asJson($this->est, $method, $this->uri($tpl, $this->q1));
 
-        $this->assertNotSame(403, $r->getStatusCode(), 'RBAC must let an estimator member through');
         $this->assertSame(0, AuditLog::count());
-        // A member who is not the owner passes RBAC; the controller still scopes writes to user_id = me.
-        // destroyItem wraps its firstOrFail in a catch-all that answers 500 (unchanged, pre-existing).
-        $notOwner = ($method === 'DELETE' && str_contains($tpl, '/items/')) ? 500 : 404;
-        $level === 'R' ? $r->assertOk() : $r->assertStatus($notOwner);
+        // Phase 4 rule 6: a member holding the level acts on a teammate's quote (the write effects are pinned in
+        // ProjectWritePathsTest). The old workspace URL is a 301 to the project page.
+        if ($tpl === 'projects/{q}/workspace') {
+            $r->assertStatus(301);
+
+            return;
+        }
+        $this->assertNotContains($r->getStatusCode(), [403, 404, 500], 'a member holding the level must reach the controller and succeed or fail validation only');
+        if ($level === 'R') {
+            $r->assertOk();
+        }
     }
 
     #[DataProvider('routes')]
@@ -359,59 +366,57 @@ class ProjectReadPathsTest extends ProjectTestCase
         $this->assertStringContainsString('href="'.route('org-admin.projects.index').'"', $r->getContent());
     }
 
-    // ---- R4 OrgAdminController::projects ----------------------------------------
+    // ---- R4 OrgAdminController::projects (project-keyed since Phase 4) ---------
 
-    public function test_r4_projects_page_lists_member_and_project_quotes_and_never_another_orgs(): void
+    public function test_r4_projects_page_lists_the_orgs_live_projects_and_never_another_orgs(): void
     {
-        $leaver = $this->mkUser($this->orgB, 'estimator');                       // owner is not in org A
-        $orphan = $this->mkQuote($leaver, $this->p1, ['name' => 'orphan in P1']);  // stays visible: P1 is org A's
         $trashedProject = $this->mkProject($this->orgA, $this->owner, 'gone', now()->toDateTimeString());
-        $inTrashed = $this->mkQuote($leaver, $trashedProject, ['name' => 'in trashed project']);
 
         $r = $this->asJson($this->est, 'GET', 'org-admin/projects')->assertOk();
-        $ids = $r->viewData('quotes')->pluck('id')->all();
+        $ids = $r->viewData('projects')->pluck('id')->all();
         sort($ids);
 
-        $this->assertSame([$this->q0, $this->q1, $this->q2, $this->q3, $orphan], $ids);
-        $this->assertNotContains($this->q4, $ids, 'org B quote (owner and project both in B)');
-        $this->assertNotContains($inTrashed, $ids, 'a trashed project\'s quote does not appear through the project clause');
+        $this->assertSame([$this->p1, $this->p2], $ids);
+        $this->assertNotContains($this->p3, $ids, 'org B project');
+        $this->assertNotContains($trashedProject, $ids, 'a trashed project does not appear');
+        $this->assertArrayNotHasKey('quotes', $r->original->getData(), 'the old quote-shaped variable is gone');
     }
 
-    public function test_r4_chips_show_active_project_rows_for_a_project_quote_and_legacy_rows_for_a_null_project_quote(): void
+    public function test_r4_chips_show_active_project_rows_only_and_legacy_rows_never(): void
     {
         DB::table('project_members')->where('project_id', $this->p1)->where('user_id', $this->super->id)->update(['is_active' => false]);
-        $this->legacyMember($this->q1, $this->stranger, $this->orgA);   // legacy row on a project quote: not shown
-        $this->legacyMember($this->q0, $this->stranger, $this->orgA);   // legacy row on a NULL-project quote: shown
-        $this->legacyMember($this->q0, $this->viewer, $this->orgA, false); // inactive legacy row: not shown
+        $this->legacyMember($this->q1, $this->stranger, $this->orgA);
+        $this->legacyMember($this->q0, $this->stranger, $this->orgA);
 
-        $quotes = $this->asJson($this->est, 'GET', 'org-admin/projects')->assertOk()->viewData('quotes')->keyBy('id');
+        $projects = $this->asJson($this->est, 'GET', 'org-admin/projects')->assertOk()->viewData('projects')->keyBy('id');
 
-        $onQ1 = $quotes[$this->q1]->project_members_list->pluck('user_id')->all();
-        sort($onQ1);
+        $onP1 = $projects[$this->p1]->project_members_list->pluck('user_id')->all();
+        sort($onP1);
         $expected = [$this->est->id, $this->viewer->id, $this->multi->id, $this->owner->id];
         sort($expected);
-        $this->assertSame($expected, $onQ1, 'project rows only, active only');
-        $this->assertSame([$this->stranger->id], $quotes[$this->q0]->project_members_list->pluck('user_id')->all());
-        $this->assertSame($onQ1, $quotes[$this->q2]->project_members_list->pluck('user_id')->sort()->values()->all(), 'members of a project show under each of its quotes');
+        $this->assertSame($expected, $onP1, 'project rows only, active only');
+        $this->assertSame([$this->owner->id], $projects[$this->p2]->project_members_list->pluck('user_id')->all());
+        foreach ($projects as $p) {
+            $this->assertNotContains($this->stranger->id, $p->project_members_list->pluck('user_id')->all(), 'legacy quote-only rows never show');
+        }
     }
 
     public function test_r4_other_orgs_rows_are_absent_from_the_chips(): void
     {
         $this->member($this->p1, $this->outsider, $this->orgB);   // a row filed under org B on org A's project
-        $this->member($this->p3, $this->multi, $this->orgB);      // org B's project chips are never on org A's page
 
-        $quotes = $this->asJson($this->est, 'GET', 'org-admin/projects')->assertOk()->viewData('quotes')->keyBy('id');
+        $projects = $this->asJson($this->est, 'GET', 'org-admin/projects')->assertOk()->viewData('projects')->keyBy('id');
 
-        $this->assertNotContains($this->outsider->id, $quotes[$this->q1]->project_members_list->pluck('user_id')->all());
-        $this->assertFalse($quotes->has($this->q4));
+        $this->assertNotContains($this->outsider->id, $projects[$this->p1]->project_members_list->pluck('user_id')->all());
+        $this->assertFalse($projects->has($this->p3));
     }
 
     public function test_r12_a_backfilled_member_shows_once_and_removing_the_chip_removes_access(): void
     {
         $legacyRow = $this->legacyMember($this->q1, $this->est, $this->orgA); // the backfill leaves the legacy row behind
 
-        $quotes = $this->asJson($this->est, 'GET', 'org-admin/projects')->assertOk()->viewData('quotes')->keyBy('id');
-        $chips = $quotes[$this->q1]->project_members_list->where('user_id', $this->est->id);
+        $projects = $this->asJson($this->est, 'GET', 'org-admin/projects')->assertOk()->viewData('projects')->keyBy('id');
+        $chips = $projects[$this->p1]->project_members_list->where('user_id', $this->est->id);
 
         $this->assertCount(1, $chips, 'shown once');
         $chip = $chips->first();
@@ -446,21 +451,26 @@ class ProjectReadPathsTest extends ProjectTestCase
             $this->assertNotContains($hidden, $ids);
         }
         $projects = $r->viewData('projects');
-        $this->assertEqualsCanonicalizing([$this->q1, $this->q2, $ownNull], $projects->pluck('id')->all());
-        $this->assertSame('Q1', $projects->firstWhere('id', $this->q1)->title, 'name is exposed as title');
+        $this->assertSame([$this->p1], $projects->pluck('id')->all(), 'the filter list is the visible projects');
+        $this->assertSame('P1', $projects->firstWhere('id', $this->p1)->name);
     }
 
-    public function test_r5_crosswalk_filter_uses_the_legacy_quote_id_and_never_widens(): void
+    public function test_r5_crosswalk_filter_is_keyed_on_project_id_and_never_widens(): void
     {
-        $visible = $this->crosswalk($this->q1, $this->p1, $this->orgA->id, 'B1');
-        $this->crosswalk($this->q2, $this->p1, $this->orgA->id, 'B2');
-        $this->crosswalk($this->q3, $this->p2, $this->orgA->id, 'H1');
+        $backfilled = $this->crosswalk($this->q1, $this->p1, $this->orgA->id, 'B1');
+        $native = $this->crosswalk(0, $this->p1, $this->orgA->id, 'N1');
+        $hidden = $this->crosswalk(0, $this->p2, $this->orgA->id, 'H1');
 
-        $filtered = $this->asJson($this->est, 'GET', 'plan-crosswalk?project_id='.$this->q1)->assertOk()->viewData('rows');
-        $invisible = $this->asJson($this->est, 'GET', 'plan-crosswalk?project_id='.$this->q3)->assertOk()->viewData('rows');
+        $filtered = $this->asJson($this->est, 'GET', 'plan-crosswalk?project_id='.$this->p1)->assertOk();
+        $invisible = $this->asJson($this->est, 'GET', 'plan-crosswalk?project_id='.$this->p2)->assertOk()->viewData('rows');
 
-        $this->assertSame([$visible], $filtered->pluck('id')->all());
-        $this->assertTrue($invisible->isEmpty(), 'an invisible id yields an empty list, never data');
+        $ids = $filtered->viewData('rows')->pluck('id')->all();
+        sort($ids);
+        $this->assertSame([$backfilled, $native], $ids, 'project-keyed rows with a NULL quote_id are kept');
+        $this->assertSame($this->p1, $filtered->viewData('selectedProjectId'));
+        $this->assertNotContains($hidden, $invisible->pluck('id')->all());
+        $this->assertSame([$backfilled, $native], $invisible->pluck('id')->sort()->values()->all(), 'an invisible project id is ignored, never widens');
+        $this->assertNull($this->asJson($this->est, 'GET', 'plan-crosswalk?project_id='.$this->p2)->viewData('selectedProjectId'));
     }
 
     public function test_r5_crosswalk_index_for_a_user_without_an_org_is_empty(): void
@@ -484,34 +494,31 @@ class ProjectReadPathsTest extends ProjectTestCase
         $this->assertSame(['X2'], $rows->pluck('plan_line_code')->all());
     }
 
-    // ---- R6 workspace -----------------------------------------------------------
+    // ---- R6 project page (project-id keyed; the old quote URL is a 301) -----------
 
-    public function test_r6_project_member_gets_the_workspace(): void
+    public function test_r6_project_member_gets_the_project_page_and_the_old_url_redirects_to_it(): void
     {
-        $this->asJson($this->est, 'GET', "projects/{$this->q1}/workspace")->assertOk()->assertViewIs('user.project-workspace.show');
+        $this->asJson($this->est, 'GET', "projects/{$this->p1}")->assertOk();
+        $this->actingAs($this->est)->get("projects/{$this->p1}")->assertOk()->assertViewIs('user.project-workspace.show');
+        $this->actingAs($this->est)->get("projects/{$this->q1}/workspace")->assertStatus(301)->assertRedirect(route('projects.show', $this->p1));
     }
 
-    public function test_r6_legacy_only_member_is_redirected_with_the_error_not_a_500(): void
+    public function test_r6_legacy_only_member_gets_404_on_both_urls(): void
     {
         $this->legacyMember($this->q1, $this->stranger, $this->orgA);
 
-        $this->actingAs($this->stranger)->get("projects/{$this->q1}/workspace")
-            ->assertRedirect(route('org-admin.projects.index'))
-            ->assertSessionHas('error', 'You are not a member of this project or do not have the required permission.');
+        $this->actingAs($this->stranger)->get("projects/{$this->q1}/workspace")->assertNotFound();
+        $this->actingAs($this->stranger)->get("projects/{$this->p1}")->assertNotFound();
     }
 
-    public function test_r6_null_project_quote_is_denied_even_for_a_user_with_the_org_level_grant(): void
+    public function test_r6_null_project_quote_old_url_is_404_in_audit_and_denied_in_enforce_even_for_the_owner(): void
     {
         $this->assertNull(DB::table('quotes')->where('id', $this->q0)->value('project_id'));
 
         foreach (['audit', 'enforce'] as $mode) {
             $this->setMode($mode);
             $r = $this->actingAs($this->owner)->get("projects/{$this->q0}/workspace");
-            if ($mode === 'audit') {
-                $r->assertRedirect(route('org-admin.projects.index'))->assertSessionHas('error');
-            } else {
-                $r->assertStatus(302); // enforce: the middleware denies first (project_unresolved)
-            }
+            $mode === 'audit' ? $r->assertNotFound() : $r->assertStatus(302); // enforce: the middleware denies first (project_unresolved)
         }
     }
 
@@ -519,23 +526,21 @@ class ProjectReadPathsTest extends ProjectTestCase
     {
         // Quote 3 (Q2) is in P1 but its id equals P3's id, and outsider is a member of P3 in org B.
         $this->assertSame($this->p3, $this->q2);
-        $this->assertSame(0, AuditLog::count());
 
-        $this->actingAs($this->outsider)->get("projects/{$this->q2}/workspace")
-            ->assertRedirect(route('org-admin.projects.index'))
-            ->assertSessionHas('error');
-        // and the real member of P1 gets in although id 3 names another org's project
-        $this->asJson($this->est, 'GET', "projects/{$this->q2}/workspace")->assertOk();
+        $this->actingAs($this->outsider)->get("projects/{$this->q2}/workspace")->assertNotFound();
+        $this->actingAs($this->est)->get("projects/{$this->q2}/workspace")->assertStatus(301)->assertRedirect(route('projects.show', $this->p1));
+        // and the project URL with id 3 is org B's project: the outsider sees it, the org A member does not
+        $this->actingAs($this->outsider)->get("projects/{$this->p3}")->assertOk();
+        $this->actingAs($this->est)->get("projects/{$this->p3}")->assertNotFound();
     }
 
-    public function test_r6_workspace_uses_the_validated_org(): void
+    public function test_r6_project_page_uses_the_validated_org(): void
     {
-        $this->actingAs($this->multi)->withSession($this->orgSession(99999))->get("projects/{$this->q1}/workspace")->assertOk();
-        $this->actingAs($this->multi)->withSession($this->orgSession($this->orgB->id))->get("projects/{$this->q1}/workspace")
-            ->assertRedirect(route('org-admin.projects.index'));
+        $this->actingAs($this->multi)->withSession($this->orgSession(99999))->get("projects/{$this->p1}")->assertOk();
+        $this->actingAs($this->multi)->withSession($this->orgSession($this->orgB->id))->get("projects/{$this->p1}")->assertNotFound();
     }
 
-    // ---- R7 writes stay closed --------------------------------------------------
+    // ---- R7 member writes (Phase 4 rule 6: a member holding the level may edit a teammate's quote) --
 
     public static function writeRoutes(): array
     {
@@ -549,22 +554,99 @@ class ProjectReadPathsTest extends ProjectTestCase
         ];
     }
 
-    #[DataProvider('writeRoutes')]
-    public function test_r7_a_project_member_still_cannot_write_a_teammates_quote(string $method, string $tpl): void
+    private function writePayload(string $tpl): array
     {
-        $this->item($this->q1, 10);
-        $quotesBefore = DB::table('quotes')->orderBy('id')->get()->all();
-        $itemsBefore = DB::table('quote_items')->count();
+        return match (true) {
+            $tpl === 'quotes/{q}' => ['notes' => 'edited by a member'],
+            str_ends_with($tpl, '/editor') => ['customer_id' => 1, 'notes' => 'edited by a member'],
+            str_contains($tpl, '/items/') => ['quantity' => 3],
+            default => [],
+        };
+    }
 
-        // destroyItem wraps its firstOrFail in a catch-all that answers 500 (unchanged, pre-existing); the rest 404.
-        $expected = ($method === 'DELETE' && str_contains($tpl, '/items/')) ? 500 : 404;
+    /** @return array<string,mixed> snapshot of everything a write route could touch */
+    private function snapshot(): array
+    {
+        return [
+            'quotes' => DB::table('quotes')->orderBy('id')->get()->all(),
+            'items' => DB::table('quote_items')->orderBy('id')->get()->all(),
+        ];
+    }
+
+    #[DataProvider('writeRoutes')]
+    public function test_r7_a_project_member_with_the_level_can_write_a_teammates_quote(string $method, string $tpl): void
+    {
+        DB::table('customers')->insert(['id' => 1, 'user_id' => $this->est->id, 'company_name' => 'ACME', 'created_at' => now(), 'updated_at' => now()]);
         foreach (['audit', 'enforce'] as $mode) {
             $this->setMode($mode);
-            $this->asJson($this->est, $method, $this->uri($tpl, $this->q1))->assertStatus($expected);
-        }
+            $this->item($this->q1, 10);
+            $quote = $this->mkQuote($this->owner, $this->p1, ['name' => "target $mode"]);
+            $this->item($quote, 10);
+            $itemId = (int) DB::table('quote_items')->where('quote_id', $quote)->value('id');
+            $uri = str_replace('/items/1', "/items/$itemId", $this->uri($tpl, $quote));
 
-        $this->assertEquals($quotesBefore, DB::table('quotes')->orderBy('id')->get()->all());
-        $this->assertSame($itemsBefore, DB::table('quote_items')->count());
+            $this->asJson($this->est, $method, $uri, [], $this->writePayload($tpl))->assertOk();
+
+            $row = DB::table('quotes')->where('id', $quote)->first();
+            match (true) {
+                $tpl === 'quotes/{q}/duplicate' => $this->assertSame(1, DB::table('quotes')->where('name', "target $mode (Copy)")->where('project_id', $this->p1)->where('user_id', $this->est->id)->count()),
+                $tpl === 'quotes/{q}' && $method === 'DELETE' => $this->assertNotNull($row->deleted_at),
+                $tpl === 'quotes/{q}' => $this->assertSame('edited by a member', $row->notes),
+                str_ends_with($tpl, '/editor') => $this->assertSame('edited by a member', $row->notes),
+                $method === 'PUT' => $this->assertSame('3.00', number_format((float) DB::table('quote_items')->where('id', $itemId)->value('quantity'), 2, '.', '')),
+                default => $this->assertNull(DB::table('quote_items')->where('id', $itemId)->first()),
+            };
+            $this->assertSame($this->owner->id, (int) $row->user_id, 'ownership does not move');
+            $this->assertSame($this->p1, (int) $row->project_id);
+        }
+    }
+
+    #[DataProvider('writeRoutes')]
+    public function test_r7_denied_cases_change_nothing_in_audit_and_enforce(string $method, string $tpl): void
+    {
+        $this->item($this->q1, 10);
+        // wrong org, non-member, role without the level (viewer holds R), inactive member, legacy-only row
+        $legacy = $this->mkUser($this->orgA, 'estimator');
+        $this->legacyMember($this->q1, $legacy, $this->orgA);
+        $inactive = $this->mkUser($this->orgA, 'estimator');
+        $this->member($this->p1, $inactive, $this->orgA, false);
+        $denied = ['wrong org' => $this->outsider, 'non-member' => $this->stranger, 'role without the level' => $this->viewer, 'inactive' => $inactive, 'legacy row' => $legacy];
+        $before = $this->snapshot();
+
+        foreach (['audit', 'enforce'] as $mode) {
+            $this->setMode($mode);
+            foreach ($denied as $label => $user) {
+                $r = $this->asJson($user, $method, $this->uri($tpl, $this->q1), [], $this->writePayload($tpl));
+                // enforce: the middleware answers 403; audit: the controller scope answers 404 (destroyItem wraps it in its 500 catch-all)
+                $expected = $mode === 'enforce' ? 403 : (($method === 'DELETE' && str_contains($tpl, '/items/')) ? 500 : 404);
+                $this->assertSame($expected, $r->getStatusCode(), "$mode / $label");
+                $this->assertEquals($before, $this->snapshot(), "$mode / $label wrote something");
+            }
+        }
+    }
+
+    public function test_r7_o_without_f_can_edit_but_not_delete_a_teammates_quote(): void
+    {
+        $eng = $this->mkUser($this->orgA, 'project_engineer'); // estimate_management O
+        $this->member($this->p1, $eng, $this->orgA);
+        $this->item($this->q1, 10);
+
+        foreach (['audit', 'enforce'] as $mode) {
+            $this->setMode($mode);
+            $this->asJson($eng, 'PUT', "quotes/{$this->q1}", [], ['notes' => "eng $mode"])->assertOk();
+            $this->assertSame("eng $mode", DB::table('quotes')->where('id', $this->q1)->value('notes'));
+
+            $this->asJson($eng, 'DELETE', "quotes/{$this->q1}")->assertStatus($mode === 'enforce' ? 403 : 404);
+            $this->assertNull(DB::table('quotes')->where('id', $this->q1)->value('deleted_at'));
+        }
+    }
+
+    public function test_r7_the_owner_keeps_writing_their_own_quote(): void
+    {
+        foreach (['audit', 'enforce'] as $mode) {
+            $this->setMode($mode);
+            $this->asJson($this->owner, 'PUT', "quotes/{$this->q1}", [], ['notes' => "owner $mode"])->assertOk();
+        }
     }
 
     // ---- R8-R10 audit-mode guarantee and enforce --------------------------------
@@ -773,13 +855,13 @@ class ProjectReadPathsTest extends ProjectTestCase
         $r = $this->asJson($this->super, 'GET', 'plan-crosswalk')->assertOk();
 
         $this->assertSame([$mine], $r->viewData('rows')->pluck('id')->all(), 'no project rows, no teammates\' quote rows');
-        $this->assertSame([$ownSuper], $r->viewData('projects')->pluck('id')->all(), 'the filter list has only the own quote');
+        $this->assertSame([$this->p1], $r->viewData('projects')->pluck('id')->all(), 'the project list is unconditional: visible projects only, rows stay narrow');
 
         $member = $this->asJson($this->est, 'GET', 'plan-crosswalk')->assertOk();
         $ids = $member->viewData('rows')->pluck('id')->all();
         sort($ids);
         $this->assertSame([$backfilled, $native], $ids, 'a member with the role sees the project rows');
-        $this->assertEqualsCanonicalizing([$this->q1, $this->q2], $member->viewData('projects')->pluck('id')->all());
+        $this->assertSame([$this->p1], $member->viewData('projects')->pluck('id')->all());
     }
 
     public function test_h9_5_an_owner_without_the_role_still_reads_their_own_quote_in_audit_mode(): void
@@ -794,8 +876,11 @@ class ProjectReadPathsTest extends ProjectTestCase
 
     public function test_h9_6_workspace_and_dashboard_stay_closed_for_a_role_less_member(): void
     {
-        $this->actingAs($this->super)->get("projects/{$this->q1}/workspace")
-            ->assertRedirect(route('org-admin.projects.index'))->assertSessionHas('error');
+        // superintendent holds project_management R only, no estimate_management: the page renders but with no estimate or crosswalk panel data
+        $page = $this->actingAs($this->super)->get("projects/{$this->p1}")->assertOk();
+        $this->assertFalse($page->viewData('canReadEstimates'));
+        $this->assertTrue($page->viewData('quotes')->isEmpty());
+        $this->assertTrue($page->viewData('crosswalkEntries')->isEmpty());
 
         $dash = $this->asJson($this->super, 'GET', 'user-dashboard')->assertOk();
         $this->assertTrue($dash->viewData('myProjects')->isEmpty(), 'canReadEstimates gate');
@@ -900,8 +985,8 @@ class ProjectReadPathsTest extends ProjectTestCase
         $this->actingAs($this->est)->withSession($stale)->delete("plan-crosswalk/$rowA2")->assertRedirect();
         $this->assertNull(DB::table('plan_crosswalk')->where('id', $rowA2)->first());
 
-        $this->actingAs($this->est)->withSession($stale)->put("plan-crosswalk/$rowB", ['plan_line_code' => 'HACK'])->assertForbidden();
-        $this->actingAs($this->est)->withSession($stale)->delete("plan-crosswalk/$rowB")->assertForbidden();
+        $this->actingAs($this->est)->withSession($stale)->put("plan-crosswalk/$rowB", ['plan_line_code' => 'HACK'])->assertNotFound();
+        $this->actingAs($this->est)->withSession($stale)->delete("plan-crosswalk/$rowB")->assertNotFound();
         $this->assertSame('B1', DB::table('plan_crosswalk')->where('id', $rowB)->value('plan_line_code'));
     }
 
@@ -957,7 +1042,7 @@ class ProjectReadPathsTest extends ProjectTestCase
 
         $xw = $this->asJson($csr, 'GET', 'plan-crosswalk')->assertOk();
         $this->assertSame([$mine], $xw->viewData('rows')->pluck('id')->all(), 'own-quote rows only');
-        $this->assertSame([$own], $xw->viewData('projects')->pluck('id')->all());
+        $this->assertSame([$this->p1], $xw->viewData('projects')->pluck('id')->all(), 'unconditional visible-project list; P2 stays hidden');
 
         // enforce mode (JSON): blocked by the middleware; agrees with audit
         $this->setMode('enforce');

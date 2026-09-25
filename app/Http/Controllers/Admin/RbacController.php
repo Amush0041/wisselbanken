@@ -3,10 +3,13 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Project;
+use App\Models\Quote;
 use App\Models\Rbac\ApiToken;
 use App\Models\Rbac\AuditLog;
 use App\Models\Rbac\Delegation;
 use App\Models\Rbac\OrgRelationship;
+use App\Models\Rbac\ProjectMember;
 use App\Models\Rbac\Organization;
 use App\Models\Rbac\RoleAssignmentLog;
 use App\Models\Rbac\PermissionGroup;
@@ -447,6 +450,10 @@ class RbacController extends Controller
 
     public function destroyOrganization(Organization $organization): RedirectResponse
     {
+        if (Project::withTrashed()->where('org_id', $organization->id)->exists()) {
+            return back()->with('error', 'This organization still has projects and cannot be deleted.');
+        }
+
         $name = $organization->name;
 
         DB::transaction(function () use ($organization) {
@@ -477,9 +484,29 @@ class RbacController extends Controller
             return back()->with('error', 'You cannot delete your own account.');
         }
 
+        $soleOrgIds = UserOrgRole::where('user_id', $user->id)->pluck('org_id')->unique()
+            ->reject(fn ($orgId) => UserOrgRole::where('org_id', $orgId)
+                ->where('user_id', '!=', $user->id)
+                ->where('is_active', true)
+                ->exists());
+
+        if (Project::withTrashed()->whereIn('org_id', $soleOrgIds)->exists()) {
+            return back()->with('error', 'This user solely owns an organization that still has projects and cannot be deleted.');
+        }
+
+        if (Project::withTrashed()->where('created_by', $user->id)->exists()) {
+            return back()->with('error', 'This user created projects and cannot be deleted. Reassign or delete those projects first.');
+        }
+
+        if (Quote::withTrashed()->where('user_id', $user->id)->whereNotNull('project_id')->exists()) {
+            return back()->with('error', 'This user owns quotes inside projects and cannot be deleted. Reassign or delete those quotes first.');
+        }
+
         $name = $user->name;
 
         DB::transaction(function () use ($user) {
+            ProjectMember::where('user_id', $user->id)->delete();
+
             // Remove all RBAC data for the user
             $userOrgIds = UserOrgRole::where('user_id', $user->id)->pluck('org_id')->unique();
 

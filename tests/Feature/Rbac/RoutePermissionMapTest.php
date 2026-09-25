@@ -71,16 +71,32 @@ class RoutePermissionMapTest extends TestCase
 
     public function test_no_project_param_on_a_quote_uri(): void
     {
+        $checked = 0;
         foreach ($this->map() as $key => $rule) {
             if (! isset($rule['project_param'])) {
                 continue;
             }
+            $checked++;
             $uri = $this->uriOf($key);
-            $this->assertStringNotContainsString('quotes/', $uri, "$key: project_param on a quotes/ URI");
-            $this->assertStringNotContainsString('{quote}', $uri, "$key: project_param on a {quote} URI");
+            $this->assertFalse(str_starts_with($uri, 'quotes/'), "$key: project_param on a quote-keyed quotes/ URI");
+            $this->assertSame([], array_intersect(['quote', 'quoteId'], $this->paramsOf($uri)), "$key: project_param on a URI carrying a quote parameter");
         }
-        // No Phase 3 route uses project_param at all; the rule is a guard for Phase 4.
-        $this->addToAssertionCount(1);
+        $this->assertGreaterThanOrEqual(8, $checked, 'the Phase 4 {project} routes carry project_param');
+    }
+
+    public function test_the_guard_still_rejects_genuine_quote_keyed_uris(): void
+    {
+        $bad = ['POST quotes/{id}/duplicate', 'GET projects/{quote}/workspace', 'PUT quotes/{quoteId}/items/{itemId}', 'GET projects/{project}/quotes/{quote}'];
+        $good = ['POST projects/{project}/quotes', 'POST projects/{project}/quotes/create-from-list/{listId}'];
+        $isQuoteKeyed = fn (string $key) => str_starts_with($this->uriOf($key), 'quotes/')
+            || array_intersect(['quote', 'quoteId'], $this->paramsOf($this->uriOf($key))) !== [];
+
+        foreach ($bad as $key) {
+            $this->assertTrue($isQuoteKeyed($key), "$key must count as quote keyed");
+        }
+        foreach ($good as $key) {
+            $this->assertFalse($isQuoteKeyed($key), "$key is project keyed");
+        }
     }
 
     public function test_every_param_value_is_a_route_parameter_of_that_uri(): void
@@ -152,6 +168,43 @@ class RoutePermissionMapTest extends TestCase
             }
         }
         $this->addToAssertionCount(1);
+    }
+
+    /** PHASE4.md section 3: key => [group, level, batch, project_param|null] */
+    private const PHASE4_ENTRIES = [
+        'GET projects' => ['project_management', 'R', 'read', null],
+        'GET projects/list' => ['project_management', 'R', 'read', null],
+        'GET projects/{project}' => ['project_management', 'R', 'read', 'project'],
+        'POST projects' => ['project_management', 'S', 'write', null],
+        'PUT projects/{project}' => ['project_management', 'O', 'write', 'project'],
+        'DELETE projects/{project}' => ['project_management', 'F', 'approve', 'project'],
+        'POST projects/{project}/members' => ['project_management', 'F', 'admin', 'project'],
+        'DELETE projects/{project}/members/{projectMember}' => ['project_management', 'F', 'admin', 'project'],
+        'POST projects/{project}/quotes' => ['estimate_management', 'S', 'write', 'project'],
+        'POST projects/{project}/quotes/create-from-list/{listId}' => ['estimate_management', 'S', 'write', 'project'],
+        'POST projects/{project}/crosswalk' => ['estimate_management', 'F', 'write', 'project'],
+        'PUT plan-crosswalk/{planCrosswalk}' => ['estimate_management', 'F', 'write', null],
+        'DELETE plan-crosswalk/{planCrosswalk}' => ['estimate_management', 'F', 'approve', null],
+    ];
+
+    public function test_the_phase4_entries_match_the_spec_and_are_registered_routes(): void
+    {
+        $registered = $this->registered();
+        foreach (self::PHASE4_ENTRIES as $key => [$group, $level, $batch, $projectParam]) {
+            $this->assertArrayHasKey($key, $registered, "$key is not a registered route");
+            $this->assertArrayHasKey($key, $this->map(), "$key has no map entry");
+            $rule = $this->map()[$key];
+            $this->assertSame([$group, $level, $batch, $projectParam], [$rule[0], $rule[1], $rule['batch'], $rule['project_param'] ?? null], $key);
+            $this->assertArrayNotHasKey('quote_param', $rule, "$key");
+        }
+    }
+
+    public function test_the_retired_quote_and_crosswalk_create_routes_are_gone_from_routes_and_map(): void
+    {
+        foreach (['POST quotes', 'POST quotes/create-from-list/{listId}', 'POST plan-crosswalk'] as $key) {
+            $this->assertArrayNotHasKey($key, $this->registered(), "$key is still routed");
+            $this->assertArrayNotHasKey($key, $this->map(), "$key is still mapped");
+        }
     }
 
     public function test_the_exact_ten_changed_entries_are_present_and_correct(): void

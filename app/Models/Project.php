@@ -14,6 +14,8 @@ class Project extends Model
 {
     use SoftDeletes;
 
+    public const STATUSES = ['active', 'on_hold', 'awarded', 'lost', 'archived'];
+
     protected $fillable = [
         'org_id',
         'name',

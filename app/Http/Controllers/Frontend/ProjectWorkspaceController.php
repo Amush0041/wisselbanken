@@ -3,91 +3,60 @@
 namespace App\Http\Controllers\Frontend;
 
 use App\Http\Controllers\Controller;
+use App\Models\Customer;
 use App\Models\PlanCrosswalk;
+use App\Models\Project;
 use App\Models\Quote;
 use App\Models\Rbac\ProjectMember;
-use App\Models\Rbac\UserOrgRole;
 use App\Models\User;
-use App\Services\Rbac\OrgRelationshipService;
 use App\Services\Rbac\PermissionService;
 use App\Support\Rbac\CurrentOrg;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
 
 /**
- * Project Workspace (document §6.5).
- *
- * A per-project surface that filters all data (estimate items, members, crosswalk)
- * to the selected project (quote_id). Every action is gated by
- * checkPermission(userId, orgId, group, level, projectId) so only project members
- * with the correct role can access the workspace.
+ * Project page (document §6.5). Everything shown is filtered to one projects.id; access
+ * needs an active project_members row plus the permission group level for each panel.
  */
 class ProjectWorkspaceController extends Controller
 {
-    public function __construct(
-        private readonly PermissionService $permissions,
-        private readonly OrgRelationshipService $orgRelationships,
-    ) {}
-
-    public function show(Quote $quote)
+    public function __construct(private readonly PermissionService $permissions)
     {
-        $orgId = $this->currentOrgId();
+    }
 
-        // Gate: user must have estimate_management:R AND be an active project member.
-        $userId = Auth::id();
+    public function show(Project $project)
+    {
+        $userId = (int) Auth::id();
+        $orgId = CurrentOrg::id($userId);
+        abort_if($orgId === null, 404);
 
-        $allowed = $quote->project_id !== null && $this->permissions->checkPermission(
-            userId: $userId,
-            orgId: $orgId,
-            permissionGroup: 'estimate_management',
-            requiredLevel: 'R',
-            projectId: (int) $quote->project_id,
-        );
+        $project = Project::visibleTo($userId, $orgId)->whereKey($project->id)->firstOrFail();
 
-        if (! $allowed) {
-            return redirect()->route('org-admin.projects.index')
-                ->with('error', 'You are not a member of this project or do not have the required permission.');
-        }
+        $can = fn (string $group, string $level) => $this->permissions->checkPermission($userId, $orgId, $group, $level, $project->id);
 
-        // §4.5 GC→Subcontractor: when the accessing org differs from the project creator's org,
-        // verify an active gc_subcontractor relationship exists between the two orgs.
-        $creatorOrgId = DB::table('user_org_roles')
-            ->where('user_id', $quote->user_id)
-            ->where('is_active', true)
-            ->value('org_id');
+        $canReadEstimates = $can('estimate_management', 'R');
+        $canCreateEstimates = $can('estimate_management', 'S');
+        $canManageCrosswalk = $can('estimate_management', 'F');
+        $canManageMembers = $can('project_management', 'F');
+        $canUpdateProject = $can('project_management', 'O');
+        $canDeleteProject = $can('project_management', 'F');
 
-        if ($creatorOrgId && (int) $creatorOrgId !== $orgId) {
-            abort_unless(
-                $this->orgRelationships->hasActiveEither($creatorOrgId, $orgId, 'gc_subcontractor'),
-                403,
-                'No active GC-Subcontractor relationship with the project owner organization.'
-            );
-        }
+        $quotes = $canReadEstimates
+            ? Quote::where('project_id', $project->id)->with(['user'])->withCount('items')->orderBy('created_at', 'desc')->get()
+            : collect();
 
-        // Reload quote with items.
-        $quote->load(['items', 'user']);
-
-        // Project members for this quote.
         $projectMembers = ProjectMember::with('user')
-            ->where('quote_id', $quote->id)
+            ->where('project_id', $project->id)
             ->where('org_id', $orgId)
             ->where('is_active', true)
             ->get();
 
-        // Crosswalk entries scoped to this project.
-        $crosswalkEntries = PlanCrosswalk::with(['product', 'creator'])
-            ->where('org_id', $orgId)
-            ->where('quote_id', $quote->id)
-            ->orderBy('plan_line_code')
-            ->get();
-
-        // All org members (for adding to project from workspace, only if user can manage).
-        $canManageMembers = $this->permissions->checkPermission(
-            userId: $userId,
-            orgId: $orgId,
-            permissionGroup: 'project_management',
-            requiredLevel: 'F',
-        );
+        $crosswalkEntries = $canReadEstimates
+            ? PlanCrosswalk::with(['product', 'creator'])
+                ->where('org_id', $orgId)
+                ->where('project_id', $project->id)
+                ->orderBy('plan_line_code')
+                ->get()
+            : collect();
 
         $orgMembers = $canManageMembers
             ? User::whereIn('id', function ($q) use ($orgId) {
@@ -96,17 +65,33 @@ class ProjectWorkspaceController extends Controller
             })->orderBy('name')->get(['id', 'name', 'email'])
             : collect();
 
-        // Pass the project ID as a JS var so blade directives work project-scoped.
-        $projectId = $quote->id;
+        $customers = $canCreateEstimates
+            ? Customer::where('user_id', $userId)->where('is_active', true)
+                ->get()
+                ->map(fn (Customer $c) => [
+                    'id' => $c->id,
+                    'name' => $c->company_name ?: trim(($c->first_name ?? '') . ' ' . ($c->last_name ?? '')),
+                ])
+                ->sortBy('name', SORT_NATURAL | SORT_FLAG_CASE)
+                ->values()
+            : collect();
 
         return view('user.project-workspace.show', compact(
-            'quote', 'projectMembers', 'crosswalkEntries',
-            'orgMembers', 'canManageMembers', 'projectId', 'orgId',
+            'project', 'quotes', 'customers', 'projectMembers', 'crosswalkEntries', 'orgMembers',
+            'canReadEstimates', 'canCreateEstimates', 'canManageCrosswalk', 'canManageMembers',
+            'canUpdateProject', 'canDeleteProject', 'orgId',
         ));
     }
 
-    private function currentOrgId(): int
+    public function legacyRedirect(Quote $quote)
     {
-        return CurrentOrg::id((int) Auth::id()) ?? 0;
+        $userId = (int) Auth::id();
+        $orgId = CurrentOrg::id($userId);
+        abort_if($orgId === null || $quote->project_id === null, 404);
+
+        $visible = Project::visibleTo($userId, $orgId)->whereKey($quote->project_id)->exists();
+        abort_unless($visible, 404);
+
+        return redirect()->route('projects.show', $quote->project_id, 301);
     }
 }

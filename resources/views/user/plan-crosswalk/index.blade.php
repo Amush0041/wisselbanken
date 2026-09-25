@@ -35,21 +35,12 @@
     {{-- Project filter --}}
     <div class="card mb-3">
         <div class="card-body py-2">
-            <form method="GET" action="{{ route('plan-crosswalk.index') }}" class="d-flex align-items-center gap-3">
-                <label class="form-label mb-0 fw-semibold text-nowrap">Filter by Project</label>
-                <select name="project_id" class="form-select form-select-sm" style="max-width:320px" onchange="this.form.submit()">
+            <div class="d-flex align-items-center gap-3">
+                <label class="form-label mb-0 fw-semibold text-nowrap" for="crosswalkProjectFilter">Filter by Project</label>
+                <select id="crosswalkProjectFilter" class="form-select form-select-sm" style="max-width:320px">
                     <option value="">All projects</option>
-                    @foreach ($projects as $project)
-                        <option value="{{ $project->id }}" @selected($selectedQuoteId == $project->id)>
-                            {{ $project->title ?? 'Quote #' . $project->id }}
-                            ({{ $project->created_at->format('M Y') }})
-                        </option>
-                    @endforeach
                 </select>
-                @if ($selectedQuoteId)
-                    <a href="{{ route('plan-crosswalk.index') }}" class="btn btn-sm btn-outline-secondary">Clear</a>
-                @endif
-            </form>
+            </div>
         </div>
     </div>
 
@@ -91,9 +82,13 @@
                     </thead>
                     <tbody>
                         @foreach ($rows as $row)
-                        <tr>
+                        <tr data-project-id="{{ $row->project_id }}">
                             <td>
-                                <small class="text-muted">{{ $row->quote?->title ?? 'Quote #' . $row->quote_id }}</small>
+                                @if ($row->project_id)
+                                    <a href="{{ route('projects.show', $row->project_id) }}" class="small text-muted">{{ $row->project?->name ?? 'Project #' . $row->project_id }}</a>
+                                @else
+                                    <small class="text-muted">—</small>
+                                @endif
                             </td>
                             <td>
                                 <span class="badge bg-label-primary font-monospace">{{ $row->plan_line_code }}</span>
@@ -199,7 +194,7 @@
 <div class="modal fade" id="addEntryModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form action="{{ route('plan-crosswalk.store') }}" method="POST">
+            <form id="addEntryForm" action="#" method="POST">
                 @csrf
                 <div class="modal-header">
                     <h5 class="modal-title">Add Crosswalk Entry</h5>
@@ -208,17 +203,10 @@
                 <div class="modal-body">
                     <div class="mb-3">
                         <label class="form-label">Project <span class="text-danger">*</span></label>
-                        <select name="quote_id" class="form-select" required>
+                        <select id="addEntryProject" class="form-select" required>
                             <option value="">Select a project…</option>
-                            @foreach ($projects as $project)
-                                <option value="{{ $project->id }}" @selected($selectedQuoteId == $project->id)>
-                                    {{ $project->title ?? 'Quote #' . $project->id }}
-                                </option>
-                            @endforeach
                         </select>
-                        @if ($projects->isEmpty())
-                            <div class="form-text text-warning">No projects found. Create a quote/estimate first.</div>
-                        @endif
+                        <div class="form-text text-warning d-none" id="addEntryNoProjects">No projects found. Create a project first.</div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Plan Line Code <span class="text-danger">*</span></label>
@@ -259,3 +247,48 @@
 </div>
 @endCanDo
 @endsection
+
+@push('scripts')
+<script>
+    (function () {
+        var storeUrlTemplate = @json(route('projects.crosswalk.store', ['project' => '__PROJECT__']));
+        var filter = document.getElementById('crosswalkProjectFilter');
+        var addSelect = document.getElementById('addEntryProject');
+        var addForm = document.getElementById('addEntryForm');
+        var initial = new URLSearchParams(window.location.search).get('project_id') || '';
+
+        function applyFilter() {
+            document.querySelectorAll('tr[data-project-id]').forEach(function (row) {
+                row.style.display = (!filter.value || row.dataset.projectId === filter.value) ? '' : 'none';
+            });
+        }
+
+        fetch(@json(route('projects.list')), { headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' } })
+            .then(function (r) { return r.json(); })
+            .then(function (res) {
+                var projects = res.projects || [];
+                projects.forEach(function (p) {
+                    [filter, addSelect].forEach(function (sel) {
+                        if (!sel) return;
+                        var opt = document.createElement('option');
+                        opt.value = String(p.id);
+                        opt.textContent = p.name || ('Project #' + p.id);
+                        sel.appendChild(opt);
+                    });
+                });
+                if (filter && initial) { filter.value = initial; applyFilter(); }
+                if (addSelect && initial) { addSelect.value = initial; }
+                var none = document.getElementById('addEntryNoProjects');
+                if (none && !projects.length) none.classList.remove('d-none');
+            });
+
+        if (filter) filter.addEventListener('change', applyFilter);
+        if (addForm && addSelect) {
+            addForm.addEventListener('submit', function (e) {
+                if (!addSelect.value) { e.preventDefault(); return; }
+                addForm.action = storeUrlTemplate.replace('__PROJECT__', encodeURIComponent(addSelect.value));
+            });
+        }
+    })();
+</script>
+@endpush

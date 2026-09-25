@@ -6,7 +6,6 @@ use App\Exceptions\Rbac\SodConflictException;
 use App\Http\Controllers\Controller;
 use App\Mail\OrgInviteMail;
 use App\Models\Project;
-use App\Models\Quote;
 use App\Models\Rbac\ApiToken;
 use App\Models\Rbac\Delegation;
 use App\Models\Rbac\OrgInvite;
@@ -20,6 +19,7 @@ use App\Models\Rbac\Role;
 use App\Models\Rbac\RolePermission;
 use App\Models\Rbac\UserOrgRole;
 use App\Models\User;
+use App\Services\Rbac\PermissionService;
 use App\Services\Rbac\RoleAssignmentService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -39,7 +39,10 @@ use Illuminate\Validation\Rule;
  */
 class OrgAdminController extends Controller
 {
-    public function __construct(private readonly RoleAssignmentService $assignments)
+    public function __construct(
+        private readonly RoleAssignmentService $assignments,
+        private readonly PermissionService $permissions,
+    )
     {
     }
 
@@ -558,38 +561,25 @@ class OrgAdminController extends Controller
             return redirect()->route('user.dashboard')->with('error', 'No organization context.');
         }
 
-        // All org member user ids.
         $memberIds = UserOrgRole::where('org_id', $org->id)->where('is_active', true)->pluck('user_id')->unique();
 
-        // Quotes owned by any org member, or belonging to one of this org's live projects.
-        $quotes = Quote::where(function ($q) use ($memberIds, $org) {
-                $q->whereIn('user_id', $memberIds)
-                    ->orWhereIn('project_id', Project::where('org_id', $org->id)->select('projects.id'));
-            })
-            ->with(['user'])
-            ->withCount(['items'])
+        $projects = Project::where('org_id', $org->id)
+            ->withCount('quotes')
             ->orderBy('created_at', 'desc')
             ->get()
-            ->map(function (Quote $quote) use ($org) {
-                $members = ProjectMember::with('user')
+            ->map(function (Project $project) use ($org) {
+                $project->setAttribute('project_members_list', ProjectMember::with('user')
+                    ->where('project_id', $project->id)
                     ->where('org_id', $org->id)
-                    ->where('is_active', true);
+                    ->where('is_active', true)
+                    ->get());
 
-                if ($quote->project_id !== null) {
-                    $members->where('project_id', $quote->project_id);
-                } else {
-                    $members->where('quote_id', $quote->id);
-                }
-
-                $quote->setAttribute('project_members_list', $members->get());
-
-                return $quote;
+                return $project;
             });
 
-        // Org members for the "add member" dropdown.
         $members = User::whereIn('id', $memberIds)->orderBy('name')->get(['id', 'name', 'email']);
 
-        return view('user.org-admin.projects', compact('org', 'quotes', 'members'));
+        return view('user.org-admin.projects', compact('org', 'projects', 'members'));
     }
 
     public function addProjectMember(Request $request): RedirectResponse
@@ -598,46 +588,49 @@ class OrgAdminController extends Controller
         abort_if(! $org, 403, 'No organization context.');
 
         $data = $request->validate([
-            'quote_id' => ['required', 'integer', 'exists:quotes,id'],
-            'user_id'  => ['required', 'integer', 'exists:users,id'],
+            'project_id' => ['required', 'integer'],
+            'user_id'    => ['required', 'integer', 'exists:users,id'],
         ]);
 
-        // Confirm the quote belongs to an org member.
-        $memberIds = UserOrgRole::where('org_id', $org->id)->where('is_active', true)->pluck('user_id');
-        $quoteOwnedByMember = Quote::where('id', $data['quote_id'])->whereIn('user_id', $memberIds)->exists();
-        abort_if(! $quoteOwnedByMember, 403, 'Quote does not belong to your organization.');
+        $project = Project::where('org_id', $org->id)->findOrFail($data['project_id']);
+        $this->requireProjectFull($project, $org);
 
-        // Confirm the target user is an org member.
-        abort_if(! $memberIds->contains($data['user_id']), 403, 'User is not a member of your organization.');
-
-        $exists = ProjectMember::where('quote_id', $data['quote_id'])
+        $isOrgMember = UserOrgRole::where('org_id', $org->id)
             ->where('user_id', $data['user_id'])
-            ->where('org_id', $org->id)
             ->where('is_active', true)
             ->exists();
+        abort_if(! $isOrgMember, 403, 'User is not a member of your organization.');
 
-        if (! $exists) {
-            ProjectMember::create([
-                'quote_id'   => (int) $data['quote_id'],
-                'user_id'    => (int) $data['user_id'],
-                'org_id'     => $org->id,
-                'granted_by' => Auth::id(),
-                'granted_at' => now(),
-                'is_active'  => true,
-            ]);
-        }
+        $member = ProjectMember::enrol($project, (int) $data['user_id'], $org->id, Auth::id());
 
-        return back()->with('success', 'Member added to project.');
+        $message = match (true) {
+            $member->wasRecentlyCreated => 'Member added to project.',
+            $member->wasChanged('is_active') => 'Member re-activated on project.',
+            default => 'User is already a member of this project.',
+        };
+
+        return back()->with('success', $message);
     }
 
     public function removeProjectMember(ProjectMember $projectMember): RedirectResponse
     {
         $org = $this->currentOrg();
         abort_if(! $org || $projectMember->org_id !== $org->id, 403, 'Not in your organization.');
+        $project = Project::where('org_id', $org->id)->findOrFail($projectMember->project_id);
+        $this->requireProjectFull($project, $org);
 
         $projectMember->update(['is_active' => false]);
 
         return back()->with('success', 'Member removed from project.');
+    }
+
+    private function requireProjectFull(Project $project, Organization $org): void
+    {
+        abort_unless(
+            $this->permissions->checkPermission((int) Auth::id(), (int) $org->id, 'project_management', 'F', $project->id),
+            403,
+            'You need full project management access to change project members.'
+        );
     }
 
     private function currentOrg(): ?Organization

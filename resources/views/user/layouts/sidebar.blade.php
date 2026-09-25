@@ -38,6 +38,16 @@ $_sc       = fn(string $g, string $l) => $_sUser && ($_sAdmin || ($_sOrgId && ap
             </a>
         </li>
 
+        {{-- Projects — project_management:R --}}
+        @if ($_sc('project_management', 'R'))
+        <li class="menu-item {{ Request::is('projects') || Request::is('projects/*') ? 'active' : '' }}">
+            <a href="{{ route('projects.index') }}" class="menu-link">
+                <i class="menu-icon tf-icons ti ti-folders"></i>
+                <div data-i18n="Projects">Projects</div>
+            </a>
+        </li>
+        @endif
+
         {{-- Lists — project_management:R --}}
         @if ($_sc('project_management', 'R'))
         <li class="menu-item {{ Request::is('view-lists') || Request::is('list-view/*') ? 'active' : '' }}">

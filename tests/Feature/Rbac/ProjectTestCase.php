@@ -84,6 +84,7 @@ abstract class ProjectTestCase extends RbacTestCase
             $t->id();
             $t->unsignedBigInteger('user_id')->nullable();
             $t->string('company_name')->nullable();
+            $t->boolean('is_active')->default(true);
             $t->timestamps();
             $t->softDeletes();
         });

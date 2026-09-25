@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Frontend;
 
 use App\Http\Controllers\Controller;
+use App\Models\Project;
 use App\Models\Quote;
 use App\Models\QuoteItem;
 use App\Models\SavedList;
@@ -58,6 +59,10 @@ class QuoteController extends Controller
         $query = Quote::visibleTo($userId, $orgId, $members)
             ->with(['savedList', 'customer', 'items'])
             ->orderBy('created_at', 'desc');
+
+        if ($request->filled('project_id') && $orgId !== null) {
+            $query->whereIn('quotes.project_id', Project::visibleTo($userId, $orgId)->whereKey($request->input('project_id'))->select('projects.id'));
+        }
 
         // Apply filters
         if ($request->filled('status') && $request->status !== 'all') {
@@ -137,6 +142,48 @@ class QuoteController extends Controller
             ],
             'total_amount' => number_format($totalAmount, 2),
         ]);
+    }
+
+    private function visibleProject(Project $project): Project
+    {
+        $userId = (int) Auth::id();
+        $orgId = CurrentOrg::id($userId);
+        abort_if($orgId === null, 404);
+
+        return Project::visibleTo($userId, $orgId)->whereKey($project->id)->firstOrFail();
+    }
+
+    private function creatableProject(Project $project): Project
+    {
+        $project = $this->visibleProject($project);
+        $userId = (int) Auth::id();
+
+        abort_unless(
+            app(PermissionService::class)->checkPermission($userId, (int) $project->org_id, 'estimate_management', 'S', $project->id),
+            403,
+            'You do not have permission to create estimates in this project.'
+        );
+
+        return $project;
+    }
+
+    private function writableQuote($id, string $level, array $with = []): Quote
+    {
+        $userId = (int) Auth::id();
+        $orgId = CurrentOrg::id($userId);
+        $permissions = app(PermissionService::class);
+        $members = $orgId !== null && $permissions->checkPermission($userId, $orgId, 'estimate_management', $level);
+
+        $quote = Quote::with($with)->visibleTo($userId, $orgId, $members)->where('quotes.id', $id)->firstOrFail();
+
+        abort_unless(
+            $orgId !== null
+                && $permissions->checkPermission($userId, $orgId, 'estimate_management', $level, $quote->project_id !== null ? (int) $quote->project_id : null),
+            403,
+            'You do not have permission to change this estimate.'
+        );
+
+        return $quote;
     }
 
     private function canReadTeamQuotes(int $userId, ?int $orgId): bool
@@ -224,8 +271,10 @@ class QuoteController extends Controller
     /**
      * Create quote from saved list
      */
-    public function createFromList($listId)
+    public function createFromList(Project $project, $listId)
     {
+        $project = $this->creatableProject($project);
+
         $list = SavedList::with('items')
             ->where('id', $listId)
             ->where('user_id', Auth::id())
@@ -234,6 +283,7 @@ class QuoteController extends Controller
         // Create quote
         $quote = Quote::create([
             'user_id' => Auth::id(),
+            'project_id' => $project->id,
             'saved_list_id' => $listId,
             'name' => $list->name,
             'project_name' => $list->project_name ?? $list->name,
@@ -277,8 +327,10 @@ class QuoteController extends Controller
     /**
      * Store a new quote
      */
-    public function store(Request $request)
+    public function store(Request $request, Project $project)
     {
+        $project = $this->creatableProject($project);
+
         $request->validate([
             'saved_list_id' => 'nullable|exists:saved_lists,id',
             'customer_id' => 'required|exists:customers,id',
@@ -327,6 +379,7 @@ class QuoteController extends Controller
 
         $quote = Quote::create([
             'user_id' => Auth::id(),
+            'project_id' => $project->id,
             'saved_list_id' => $request->saved_list_id,
             'customer_id' => $customer->id,
             'name' => $estimateLabel,
@@ -408,9 +461,7 @@ class QuoteController extends Controller
      */
     public function update(Request $request, $id)
     {
-        $quote = Quote::where('id', $id)
-            ->where('user_id', Auth::id())
-            ->firstOrFail();
+        $quote = $this->writableQuote($id, 'O');
 
         $request->validate([
             'project_name' => 'nullable|string|max:255',
@@ -453,12 +504,10 @@ class QuoteController extends Controller
      */
     public function updateItem(Request $request, $quoteId, $itemId)
     {
-        $quote = Quote::where('id', $quoteId)
-            ->where('user_id', Auth::id())
-            ->firstOrFail();
+        $quote = $this->writableQuote($quoteId, 'O');
 
         $item = QuoteItem::where('id', $itemId)
-            ->where('quote_id', $quoteId)
+            ->where('quote_id', $quote->id)
             ->firstOrFail();
 
         $request->validate([
@@ -502,9 +551,7 @@ class QuoteController extends Controller
     public function destroyItem($quoteId, $itemId)
     {
         try {
-            $quote = Quote::where('id', $quoteId)
-                ->where('user_id', Auth::id())
-                ->firstOrFail();
+            $quote = $this->writableQuote($quoteId, 'F');
 
             $item = QuoteItem::where('id', $itemId)
                 ->where('quote_id', $quoteId)
@@ -521,6 +568,8 @@ class QuoteController extends Controller
                 'total_items' => $totalItems,
                 'total' => number_format($total, 2),
             ]);
+        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+            throw $e;
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
@@ -534,9 +583,7 @@ class QuoteController extends Controller
      */
     public function destroy($id)
     {
-        $quote = Quote::where('id', $id)
-            ->where('user_id', Auth::id())
-            ->firstOrFail();
+        $quote = $this->writableQuote($id, 'F');
 
         // Delete PDF if exists
         if ($quote->pdf_path && Storage::disk('public')->exists($quote->pdf_path)) {
@@ -556,13 +603,12 @@ class QuoteController extends Controller
      */
     public function duplicate($id)
     {
-        $originalQuote = Quote::with('items')
-            ->where('id', $id)
-            ->where('user_id', Auth::id())
-            ->firstOrFail();
+        $originalQuote = $this->writableQuote($id, 'O', ['items']);
+        abort_if($originalQuote->project_id === null, 422, 'This estimate does not belong to a project yet.');
 
         $newQuote = Quote::create([
             'user_id' => Auth::id(),
+            'project_id' => $originalQuote->project_id,
             'saved_list_id' => $originalQuote->saved_list_id,
             'customer_id' => $originalQuote->customer_id,
             'name' => $originalQuote->name . ' (Copy)',
@@ -604,9 +650,7 @@ class QuoteController extends Controller
 
     public function saveEditor(Request $request, $id)
     {
-        $quote = Quote::where('id', $id)
-            ->where('user_id', Auth::id())
-            ->firstOrFail();
+        $quote = $this->writableQuote($id, 'O');
 
         $request->validate([
             'customer_id' => 'required|exists:customers,id',
@@ -634,7 +678,12 @@ class QuoteController extends Controller
         ]);
 
         $customer = Customer::where('id', $request->customer_id)
-            ->where('user_id', Auth::id())
+            ->where(function ($q) use ($quote) {
+                $q->where('user_id', Auth::id());
+                if ($quote->customer_id !== null) {
+                    $q->orWhere('id', $quote->customer_id);
+                }
+            })
             ->firstOrFail();
 
         $estimateLabel = $request->estimate_label

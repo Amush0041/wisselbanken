@@ -93,6 +93,19 @@ return [
     'DELETE org-admin/projects/members/{projectMember}' => ['project_management', 'F', 'batch' => 'admin'],
     'GET projects/{quote}/workspace'                    => ['estimate_management', 'R', 'batch' => 'read', 'quote_param' => 'quote'],
 
+    // Projects (entity CRUD and membership)
+    'GET projects'                                      => ['project_management', 'R', 'batch' => 'read'],
+    'GET projects/list'                                 => ['project_management', 'R', 'batch' => 'read'],
+    'GET projects/{project}'                            => ['project_management', 'R', 'batch' => 'read',    'project_param' => 'project'],
+    'POST projects'                                     => ['project_management', 'S', 'batch' => 'write'],
+    'PUT projects/{project}'                            => ['project_management', 'O', 'batch' => 'write',   'project_param' => 'project'],
+    'DELETE projects/{project}'                         => ['project_management', 'F', 'batch' => 'approve', 'project_param' => 'project'],
+    'POST projects/{project}/members'                   => ['project_management', 'F', 'batch' => 'admin',   'project_param' => 'project'],
+    'DELETE projects/{project}/members/{projectMember}' => ['project_management', 'F', 'batch' => 'admin',   'project_param' => 'project'],
+    'POST projects/{project}/quotes'                    => ['estimate_management', 'S', 'batch' => 'write',  'project_param' => 'project'],
+    'POST projects/{project}/quotes/create-from-list/{listId}' => ['estimate_management', 'S', 'batch' => 'write', 'project_param' => 'project'],
+    'POST projects/{project}/crosswalk'                 => ['estimate_management', 'F', 'batch' => 'write',  'project_param' => 'project'],
+
     // =========================================================================
     // SAVED LISTS
     // =========================================================================
@@ -125,8 +138,6 @@ return [
     'GET quotes/{id}/pdf'                     => ['estimate_management', 'R', 'batch' => 'read',    'quote_param' => 'id'],
 
     // Submit — create new estimates (S: can create, cannot approve)
-    'POST quotes'                             => ['estimate_management', 'S', 'batch' => 'write'],
-    'POST quotes/create-from-list/{listId}'   => ['estimate_management', 'S', 'batch' => 'write'],
     'POST quotes/{id}/duplicate'              => ['estimate_management', 'O', 'batch' => 'write',   'quote_param' => 'id'],
 
     // Own — edit existing estimates the user owns
@@ -223,7 +234,6 @@ return [
     // Estimator / PM = F (full CRUD); Procurement / Requisitioner / Exec Approver = R
     // =========================================================================
     'GET plan-crosswalk'                                         => ['estimate_management', 'R',  'batch' => 'read'],
-    'POST plan-crosswalk'                                        => ['estimate_management', 'F',  'batch' => 'write'],
     'PUT plan-crosswalk/{planCrosswalk}'                         => ['estimate_management', 'F',  'batch' => 'write'],
     'DELETE plan-crosswalk/{planCrosswalk}'                      => ['estimate_management', 'F',  'batch' => 'approve'],
 

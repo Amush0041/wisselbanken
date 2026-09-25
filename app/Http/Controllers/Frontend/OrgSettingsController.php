@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Frontend;
 
 use App\Http\Controllers\Controller;
+use App\Models\Project;
 use App\Models\Rbac\AuditLog;
 use App\Models\Rbac\Delegation;
 use App\Models\Rbac\OrgRelationship;
@@ -53,6 +54,10 @@ class OrgSettingsController extends Controller
         $org = $this->currentOrg();
         abort_if(! $org, 403, 'No organization context.');
         abort_unless($this->isOwner($org), 403, 'Only the organization owner can delete this organization.');
+
+        if (Project::withTrashed()->where('org_id', $org->id)->exists()) {
+            return back()->with('error', 'This organization still has projects and cannot be deleted.');
+        }
 
         $name = $org->name;
 

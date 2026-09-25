@@ -80,9 +80,12 @@
     <div class="card border-0 shadow-sm mb-3">
         <div class="card-header py-3 d-flex justify-content-between align-items-center">
             <h6 class="mb-0"><i class="ti ti-folders me-1 text-muted"></i>My Projects</h6>
-            @if (!empty($canManageProjects) && $canManageProjects)
-            <a href="{{ route('org-admin.projects.index') }}" class="btn btn-xs btn-outline-secondary">Manage</a>
-            @endif
+            <div class="d-flex gap-1">
+                <a href="{{ route('projects.index') }}" class="btn btn-xs btn-outline-secondary">All Projects</a>
+                @if (!empty($canManageProjects) && $canManageProjects)
+                <a href="{{ route('org-admin.projects.index') }}" class="btn btn-xs btn-outline-secondary">Manage</a>
+                @endif
+            </div>
         </div>
         <div class="card-body p-0">
             <div class="table-responsive">
@@ -104,7 +107,9 @@
                             <td class="text-end"><span class="badge bg-label-secondary" style="font-size:.65rem">{{ ucfirst($mp->status ?? 'draft') }}</span></td>
                             <td class="text-end small text-muted">{{ $mp->updated_at?->format('M d') }}</td>
                             <td class="text-end">
-                                <a href="{{ route('project.workspace', $mp->id) }}" class="btn btn-xs btn-label-primary">Open</a>
+                                @if ($mp->project_id)
+                                <a href="{{ route('projects.show', $mp->project_id) }}" class="btn btn-xs btn-label-primary">Open</a>
+                                @endif
                             </td>
                         </tr>
                         @endforeach
@@ -161,7 +166,7 @@
                     </p>
                     @foreach ($pendingApprovals as $ap)
                     <div class="d-flex justify-content-between align-items-center mb-1">
-                        <a href="{{ route('project.workspace', $ap->id) }}" class="small text-body fw-medium text-truncate" style="max-width:160px">{{ $ap->name ?: ('Estimate #' . $ap->id) }}</a>
+                        <a href="{{ $ap->project_id ? route('projects.show', $ap->project_id) : route('quotes.index') }}" class="small text-body fw-medium text-truncate" style="max-width:160px">{{ $ap->name ?: ('Estimate #' . $ap->id) }}</a>
                         <span class="badge bg-label-danger" style="font-size:.65rem">Awaiting</span>
                     </div>
                     @endforeach

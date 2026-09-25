@@ -134,7 +134,8 @@ const QUOTES_CSRF_TOKEN = '{{ csrf_token() }}';
 const QUOTES_BASE_URL = @json(url('quotes'));
 const QUOTES_LOGIN_URL = @json(url('login'));
 const QUOTES_LIST_ROUTE = @json(route('quotes.list'));
-const QUOTES_STORE_ROUTE = @json(route('quotes.store'));
+const QUOTES_PROJECT_STORE_URL = @json(route('projects.quotes.store', ['project' => '__PROJECT__']));
+const PROJECTS_LIST_ROUTE = @json(route('projects.list'));
 const QUOTES_SERVICES_ROUTE = @json(route('quotes.services'));
 const QUOTES_STORAGE_URL = @json(rtrim(asset('storage'), '/'));
 
@@ -464,6 +465,9 @@ $(document).ready(function() {
         return;
     }
     loadEstimatesList();
+    if (window.RBAC_CAN.canCreateEstimate && coercePositiveIntId(new URLSearchParams(window.location.search).get('project'))) {
+        createNewEstimate();
+    }
 });
 
 function loadEstimatesList() {
@@ -1379,6 +1383,16 @@ function renderCreateEstimateForm(data) {
             </div>
         </div>
         <div class="estimate-create-form estimate-create-form-themed">
+            ${quote ? '' : `
+            <div class="wb-notch mb-3">
+                <span class="wb-notch__label">Project*</span>
+                <div class="wb-notch__control">
+                    <select id="createEstimateProject" class="form-control" required>
+                        <option value="">Select project</option>
+                    </select>
+                </div>
+                <div class="form-text" id="createEstimateProjectHint"></div>
+            </div>`}
             <div class="estimate-form-grid estimate-form-grid--primary">
                 <div class="wb-notch wb-notch--field-customer">
                     <span class="wb-notch__label">Customer*</span>
@@ -1532,6 +1546,7 @@ function renderCreateEstimateForm(data) {
     `;
     $('#estimateDetails').html(formHtml);
     loadCustomersForEstimateForm(quote);
+    if (!quote) loadProjectsForEstimateForm();
     renderCreateEstimateItemsTable();
     initCreateEstimateDatePicker(quote);
     bindCreateEstimateBottomEvents();
@@ -2097,6 +2112,36 @@ function bindCreateEstimateBottomEvents() {
     });
 }
 
+function loadProjectsForEstimateForm() {
+    $.ajax({
+        url: PROJECTS_LIST_ROUTE,
+        method: 'GET',
+        headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+        success: function(response) {
+            const projects = Array.isArray(response.projects) ? response.projects : [];
+            const $select = $('#createEstimateProject');
+            if (!$select.length) return;
+            let options = '<option value="">Select project</option>';
+            projects.forEach(function(p) {
+                options += `<option value="${escapeAttr(String(p.id))}">${escapeHtml(p.name || ('Project #' + p.id))}</option>`;
+            });
+            $select.html(options);
+            const wanted = coercePositiveIntId(new URLSearchParams(window.location.search).get('project'));
+            if (wanted && projects.some(function(p) { return p.id === wanted; })) {
+                $select.val(String(wanted));
+            } else if (projects.length === 1) {
+                $select.val(String(projects[0].id));
+            }
+            if (!projects.length) {
+                $('#createEstimateProjectHint').text('No projects yet. Create a project first.');
+            }
+        },
+        error: function(xhr) {
+            console.error('Error loading projects for estimate form:', xhr);
+        }
+    });
+}
+
 function loadCustomersForEstimateForm(quote) {
     $.ajax({
         url: @json(route('quotes.customers')),
@@ -2179,7 +2224,14 @@ function submitCreateEstimateForm() {
     const currency = ($('#createEstimateCurrency').val() || '').trim();
     const editId = coercePositiveIntId(editingQuoteId);
     const isEditing = !!editId;
-    const requestUrl = isEditing ? (QUOTES_BASE_URL + '/' + editId + '/editor') : QUOTES_STORE_ROUTE;
+    const projectId = coercePositiveIntId($('#createEstimateProject').val());
+    if (!isEditing && !projectId) {
+        alert('Please select project');
+        return;
+    }
+    const requestUrl = isEditing
+        ? (QUOTES_BASE_URL + '/' + editId + '/editor')
+        : QUOTES_PROJECT_STORE_URL.replace('__PROJECT__', String(projectId));
 
     const payloadItems = createEstimateItems.map(function(it) {
         return {
