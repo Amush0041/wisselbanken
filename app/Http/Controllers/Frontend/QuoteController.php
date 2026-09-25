@@ -57,7 +57,7 @@ class QuoteController extends Controller
         $members = $this->canReadTeamQuotes($userId, $orgId);
 
         $query = Quote::visibleTo($userId, $orgId, $members)
-            ->with(['savedList', 'customer', 'items'])
+            ->with(['savedList', 'customer', 'items', 'project:id,name'])
             ->orderBy('created_at', 'desc');
 
         if ($request->filled('project_id') && $orgId !== null) {
@@ -118,6 +118,8 @@ class QuoteController extends Controller
                     'id' => $quote->id,
                     'customer_name' => $customerName,
                     'project_name' => $quote->project_name ?? $quote->name ?? 'Untitled',
+                    'parent_project_id' => $quote->project?->id,
+                    'parent_project_name' => $quote->project?->name,
                     'total_amount' => number_format($total, 2),
                     'quote_number' => $quote->quote_number,
                     'date' => optional($quote->estimate_date)->format('M d, Y') ?? $quote->created_at->format('M d, Y'),
@@ -198,7 +200,7 @@ class QuoteController extends Controller
     public function getEstimateDetails($id)
     {
         $orgId = CurrentOrg::id((int) Auth::id());
-        $quote = Quote::with(['items.productVariationColor.productVariation.product', 'savedList', 'customer'])
+        $quote = Quote::with(['items.productVariationColor.productVariation.product', 'savedList', 'customer', 'project:id,name'])
             ->visibleTo(Auth::id(), $orgId, $this->canReadTeamQuotes(Auth::id(), $orgId))
             ->where('id', $id)
             ->firstOrFail();
@@ -247,6 +249,8 @@ class QuoteController extends Controller
                 'customer_name' => optional($quote->customer)->company_name ?? optional($quote->savedList)->name ?? 'N/A',
                 'estimate_label' => $quote->name ?? '',
                 'project_name' => $quote->project_name ?? '',
+                'parent_project_id' => $quote->project?->id,
+                'parent_project_name' => $quote->project?->name,
                 'total' => number_format($quote->calculateTotal(), 2),
                 'date' => optional($quote->estimate_date)->format('M d, Y') ?? $quote->created_at->format('M d, Y'),
                 'status' => $quote->status,

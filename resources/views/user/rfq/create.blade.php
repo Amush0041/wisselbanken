@@ -67,7 +67,7 @@
                                 <i class="ti ti-link me-1"></i>
                                 <strong>No trading partners yet.</strong>
                                 You can only send RFQs to supplier organisations you have an active <strong>Buyer → Seller</strong> connection with.
-                                <a href="{{ route('org-admin.connections') }}" class="alert-link ms-1">Add a supplier in Connections &rarr;</a>
+                                <a href="{{ route('org-admin.connections.index') }}" class="alert-link ms-1">Add a supplier in Connections &rarr;</a>
                             </div>
                         @else
                         <div class="row g-2">

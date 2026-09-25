@@ -544,6 +544,7 @@ function renderEstimatesList(quotes) {
                 <div class="estimate-item-header">
                     <div class="estimate-item-title-block">
                         <div class="estimate-customer">${escapeHtml(quote.customer_name || '')}</div>
+                        ${parentProjectLinkHtml(quote)}
                     </div>
                     <div class="estimate-item-meta">
                         <div class="estimate-amount">$${formatMoneyPlain(quote.total_amount)}</div>
@@ -590,6 +591,14 @@ function loadEstimateDetails(quoteId) {
             console.error('Error loading estimate details:', xhr);
         }
     });
+}
+
+const PROJECT_SHOW_URL = @json(route('projects.show', ['project' => '__ID__']));
+
+function parentProjectLinkHtml(quote) {
+    if (!quote || !quote.parent_project_id) return '';
+    const href = PROJECT_SHOW_URL.replace('__ID__', encodeURIComponent(quote.parent_project_id));
+    return `<a href="${escapeHtml(href)}" class="small text-muted" onclick="event.stopPropagation()">Project: ${escapeHtml(quote.parent_project_name || '')}</a>`;
 }
 
 function escapeHtml(str) {
@@ -1366,7 +1375,7 @@ function renderCreateEstimateForm(data) {
         <div class="quotes-right-header estimate-create-header">
             <div class="estimate-detail-header">
                 <div class="estimate-detail-customer">${quote ? escapeHtml(quote.customer_name || quote.estimate_label || 'Estimate') : 'New Estimate'}</div>
-                <div class="estimate-detail-project"></div>
+                <div class="estimate-detail-project">${parentProjectLinkHtml(quote)}</div>
             </div>
             <div class="estimate-detail-actions">
                 ${_rbacSaveBtn}

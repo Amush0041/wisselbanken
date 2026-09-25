@@ -62,6 +62,9 @@ class ProjectWorkspaceController extends Controller
             ? User::whereIn('id', function ($q) use ($orgId) {
                 $q->select('user_id')->from('user_org_roles')
                     ->where('org_id', $orgId)->where('is_active', true);
+            })->whereNotIn('id', function ($q) use ($project) {
+                $q->select('user_id')->from('project_members')
+                    ->where('project_id', $project->id)->where('is_active', 1);
             })->orderBy('name')->get(['id', 'name', 'email'])
             : collect();
 

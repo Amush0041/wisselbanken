@@ -92,13 +92,25 @@ class ProjectController extends Controller
     {
         $project = $this->visibleProject($project, 'F');
 
-        DB::transaction(function () use ($project) {
+        $message = 'Delete or move the estimates in this project first.';
+        $blocked = false;
+
+        DB::transaction(function () use ($project, $request, $message, &$blocked) {
             $locked = Project::whereKey($project->id)->lockForUpdate()->firstOrFail();
 
-            abort_if($locked->quotes()->exists(), 422, 'Delete or move the estimates in this project first.');
+            if ($locked->quotes()->exists()) {
+                abort_if($request->expectsJson(), 422, $message);
+                $blocked = true;
+
+                return;
+            }
 
             $locked->delete();
         });
+
+        if ($blocked) {
+            return redirect()->route('projects.show', $project)->with('error', $message);
+        }
 
         if ($request->expectsJson()) {
             return response()->json(['success' => true]);

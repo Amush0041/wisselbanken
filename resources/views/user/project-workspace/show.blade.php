@@ -289,7 +289,7 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-danger btn-sm">Delete Project</button>
+                    <button type="submit" class="btn btn-danger btn-sm" @disabled($project->quotes()->exists())>Delete Project</button>
                 </div>
             </form>
         </div>
@@ -310,7 +310,7 @@
                 <div class="modal-body">
                     <label class="form-label">Team member</label>
                     <select name="user_id" class="form-select" required>
-                        <option value="">Select a member…</option>
+                        <option value="">{{ $orgMembers->isEmpty() ? 'All organization members are already in this project' : 'Select a member…' }}</option>
                         @foreach ($orgMembers as $m)
                             <option value="{{ $m->id }}">{{ $m->name }} ({{ $m->email }})</option>
                         @endforeach
@@ -318,7 +318,7 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary btn-sm">Add to Project</button>
+                    <button type="submit" class="btn btn-primary btn-sm" @disabled($orgMembers->isEmpty())>Add to Project</button>
                 </div>
             </form>
         </div>
