@@ -217,7 +217,9 @@ class AuditFindingsTest extends ProjectTestCase
         $this->assertTrue($r->viewData('canManageProjects'));
         $r->assertSee($add, false)->assertSee($remove, false)->assertSee('title="Remove"', false);
 
-        foreach ([$this->viewer, $this->eng, $this->mfr] as $u) {
+        $this->page($this->mfr, 'org-admin/projects')->assertForbidden();
+
+        foreach ([$this->viewer, $this->eng] as $u) {
             $r = $this->page($u, 'org-admin/projects')->assertOk();
             $this->assertFalse($r->viewData('canManageProjects'));
             $r->assertDontSee($add, false)->assertDontSee($remove, false)->assertDontSee('title="Remove"', false);

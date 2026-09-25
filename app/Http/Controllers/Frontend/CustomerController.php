@@ -7,16 +7,20 @@ use App\Models\Customer;
 use App\Models\CustomerActivityLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use App\Services\Rbac\PermissionService;
+use App\Support\Rbac\CurrentOrg;
 
 class CustomerController extends Controller
 {
     public function index()
     {
+        $this->requireOrgLevel('quote_rfq_management', 'R');
         return view('user.customers.index');
     }
 
     public function list(Request $request)
     {
+        $this->requireOrgLevel('quote_rfq_management', 'R');
         $userId = Auth::id();
 
         $q = Customer::query()
@@ -79,6 +83,7 @@ class CustomerController extends Controller
 
     public function show($id)
     {
+        $this->requireOrgLevel('quote_rfq_management', 'R');
         $customer = $this->resolveUserCustomer($id);
 
         $logs = CustomerActivityLog::with('user')
@@ -106,6 +111,7 @@ class CustomerController extends Controller
 
     public function store(Request $request)
     {
+        $this->requireOrgLevel('user_management', 'S');
         $data = $this->validated($request);
         $data['user_id'] = Auth::id();
 
@@ -128,6 +134,7 @@ class CustomerController extends Controller
 
     public function update(Request $request, $id)
     {
+        $this->requireOrgLevel('user_management', 'O');
         $customer = $this->resolveUserCustomer($id);
 
         $data = $this->validated($request);
@@ -149,6 +156,7 @@ class CustomerController extends Controller
 
     public function destroy($id)
     {
+        $this->requireOrgLevel('user_management', 'F');
         $customer = $this->resolveUserCustomer($id);
 
         CustomerActivityLog::create([
@@ -204,5 +212,16 @@ class CustomerController extends Controller
             ->where('id', $id)
             ->firstOrFail();
     }
-}
 
+    private function requireOrgLevel(string $group, string $level): void
+    {
+        $userId = (int) Auth::id();
+        $orgId = (int) CurrentOrg::id($userId);
+
+        abort_unless(
+            $orgId > 0 && app(PermissionService::class)->checkPermission($userId, $orgId, $group, $level),
+            403,
+            'You do not have permission to perform this action.'
+        );
+    }
+}

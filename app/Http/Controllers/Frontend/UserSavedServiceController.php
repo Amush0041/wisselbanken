@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\UserService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use App\Services\Rbac\PermissionService;
+use App\Support\Rbac\CurrentOrg;
 
 class UserSavedServiceController extends Controller
 {
@@ -24,11 +26,13 @@ class UserSavedServiceController extends Controller
 
     public function index()
     {
+        $this->requireOrgLevel('product_management', 'R');
         return view('user.user-services.index');
     }
 
     public function list(Request $request)
     {
+        $this->requireOrgLevel('product_management', 'R');
         $userId = (int) Auth::id();
 
         $q = UserService::query()->forUser($userId);
@@ -67,6 +71,7 @@ class UserSavedServiceController extends Controller
 
     public function show($id)
     {
+        $this->requireOrgLevel('product_management', 'R');
         $userId = (int) Auth::id();
         $s = UserService::query()->forUser($userId)->whereKey($id)->firstOrFail();
 
@@ -91,6 +96,7 @@ class UserSavedServiceController extends Controller
 
     public function store(Request $request)
     {
+        $this->requireOrgLevel('product_management', 'S');
         $userId = (int) Auth::id();
         $payload = $this->normalizePayload($request->validate(self::SERVICE_RULES));
         $payload['content_hash'] = $this->buildUniqueContentHash($userId, $payload, null);
@@ -106,6 +112,7 @@ class UserSavedServiceController extends Controller
 
     public function update(Request $request, $id)
     {
+        $this->requireOrgLevel('product_management', 'O');
         $userId = (int) Auth::id();
         $service = UserService::query()->forUser($userId)->whereKey($id)->firstOrFail();
         $payload = $this->normalizePayload($request->validate(self::SERVICE_RULES));
@@ -119,6 +126,7 @@ class UserSavedServiceController extends Controller
 
     public function destroy($id)
     {
+        $this->requireOrgLevel('product_management', 'F');
         $userId = (int) Auth::id();
         $deleted = UserService::query()->forUser($userId)->whereKey($id)->delete();
 
@@ -173,5 +181,17 @@ class UserSavedServiceController extends Controller
             $i++;
             $hash = hash('sha256', $base.'#'.$i);
         }
+    }
+
+    private function requireOrgLevel(string $group, string $level): void
+    {
+        $userId = (int) Auth::id();
+        $orgId = (int) CurrentOrg::id($userId);
+
+        abort_unless(
+            $orgId > 0 && app(PermissionService::class)->checkPermission($userId, $orgId, $group, $level),
+            403,
+            'You do not have permission to perform this action.'
+        );
     }
 }

@@ -188,6 +188,10 @@
 /* Right panel (edit): delete in header, show on header hover */
 .quotes-right-header.estimate-create-header {
     position: relative;
+    height: auto;
+    min-height: 52px;
+    padding-top: 6px;
+    padding-bottom: 6px;
 }
 .quotes-right-header.estimate-create-header .btn-estimate-header-delete {
     opacity: 0;
@@ -1091,6 +1095,30 @@ select.wb-notch-native:invalid,
     justify-content: space-between;
     align-items: center;
     flex: 1;
+    min-width: 0;
+}
+
+.estimate-detail-titles {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.estimate-detail-titles .estimate-detail-customer {
+    font-size: 20px;
+    line-height: 1.2;
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.estimate-detail-project a {
+    color: inherit !important;
+    text-decoration: underline;
 }
 
 .estimate-detail-customer {

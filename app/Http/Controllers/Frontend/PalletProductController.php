@@ -12,6 +12,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Facades\Log;
+use App\Services\Rbac\PermissionService;
+use App\Support\Rbac\CurrentOrg;
 
 class PalletProductController extends Controller
 {
@@ -763,6 +765,7 @@ class PalletProductController extends Controller
      */
     public function getSavedLists()
     {
+        $this->requireOrgLevel('project_management', 'R');
         if (!auth()->check()) {
             return response()->json(['message' => 'Unauthorized'], 401);
         }
@@ -780,6 +783,7 @@ class PalletProductController extends Controller
      */
     public function saveShoppingList(Request $request)
     {
+        $this->requireOrgLevel('project_management', 'S');
         if (!auth()->check()) {
             return response()->json(['message' => 'Unauthorized'], 401);
         }
@@ -886,6 +890,7 @@ class PalletProductController extends Controller
     
     public function saveShoppingListProductDetail(Request $request)
     {
+        $this->requireOrgLevel('project_management', 'S');
         if (!auth()->check()) {
             return response()->json(['message' => 'Unauthorized'], 401);
         }
@@ -1001,6 +1006,7 @@ class PalletProductController extends Controller
      */
     public function migrateSessionToDatabase()
     {
+        $this->requireOrgLevel('procurement', 'S');
         if (!Auth::check()) {
             return response()->json([
                 'success' => false,
@@ -1170,6 +1176,7 @@ class PalletProductController extends Controller
      */
     public function getPalletDataForCheckout()
     {
+        $this->requireOrgLevel('procurement', 'R');
         if (!Auth::check()) {
             return response()->json([
                 'success' => false,
@@ -1233,5 +1240,17 @@ class PalletProductController extends Controller
                 return $item->quantity * ($item->variationColor->productVariation->pricing ?? 0);
             })
         ]);
+    }
+
+    private function requireOrgLevel(string $group, string $level): void
+    {
+        $userId = (int) Auth::id();
+        $orgId = (int) CurrentOrg::id($userId);
+
+        abort_unless(
+            $orgId > 0 && app(PermissionService::class)->checkPermission($userId, $orgId, $group, $level),
+            403,
+            'You do not have permission to perform this action.'
+        );
     }
 }

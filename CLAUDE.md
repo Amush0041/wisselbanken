@@ -1,8 +1,13 @@
 # Wisselbanken
 
-Laravel 11 / PHP 8.2 / MariaDB / Blade + Livewire + Tailwind. A B2B construction
+Laravel 11 / PHP 8.2 / MariaDB / Blade + Tailwind (the Livewire package is installed but unused in app/resources/routes). A B2B construction
 materials marketplace with a custom multi-tenant RBAC system built from scratch
 per a client-specified implementation plan.
+
+**Resuming? Read [HANDOVER.md](HANDOVER.md) first** (snapshot 2026-09-26: what is
+done, current state, decisions, open tasks). Latest branch:
+`fix/p2-cleanup`. Then the last "Status" line of
+`.claude/tasks/projects-entity/PROGRESS.md`. Do not read the whole `PLAN.md`.
 
 ## RBAC — read before touching anything permission-related
 
@@ -34,6 +39,15 @@ per a client-specified implementation plan.
   production is reported to be in audit mode). In enforce mode a missing or
   wrong mapping fails closed; in audit mode it is only logged, so controller
   data scoping is the real guard there.
+- Controllers ALSO check the level server-side, mirroring the route map, for the
+  org-admin, settings, delegation, API-token, project-member and RFQ actions, so
+  they hold in audit mode too (audit mode only logs in the middleware). Any new
+  write action must add the same check (`OrgAdminController::requireOrgLevel`
+  pattern), not just a map entry. Membership changes go through
+  `ProjectMember::enrol()` / `deactivate()`, which write `project_member_logs`.
+- RFQs belong to a project (`rfq_requests.project_id`, nullable for legacy rows);
+  converting an RFQ to an order needs `quote_rfq_management` F and `procurement` S
+  and follows `ApprovalRoutingService`. Sellers must never see the buyer's project.
 - Known bug: `OrgRelationshipService::sellerAuthorizationError()` checks org
   type `=== 'rep_agency'`, but the real slug is `manufacturer_s_rep_sales_agency`.
   That branch is dead code — don't assume rep-agency seller authorization is
@@ -52,7 +66,7 @@ per a client-specified implementation plan.
 - No speculative abstraction, no feature flags for hypothetical futures.
   Match existing service/controller patterns rather than inventing new ones.
 - Every permission-sensitive route needs both a `route_permission_map.php`
-  entry AND a Pest test covering the allowed path and the denied path
+  entry AND a test (PHPUnit-style classes; Pest is not installed) covering the allowed path and the denied path
   (wrong role, wrong org, and — if project-scoped — missing project
   membership).
 
@@ -114,10 +128,21 @@ Phase 5 (irreversible schema tightening) goes back to STRICT.
 - Still never: run migrate/backfill against the local MySQL DB (`.env` says
   `APP_ENV=production`), touch production/SSH, push, or commit without approval.
 
-### Projects feature status
+### Projects feature status (updated 2026-09-26; full detail in HANDOVER.md)
 
-Phases 1-4 are committed on `feature/projects-entity`; Phase 5 (built in STRICT
-mode) is committed on `feature/projects-entity-phase5`. Neither branch is pushed.
+P2 cleanup is implemented on `fix/p2-cleanup` (uncommitted until approved): server-side checks on every mapped route, zero-approver refusal, small fixes, refreshed docs. Suite baseline is now 1012 passed / 4 failed.
+
+All work is committed and pushed. Branches build on each other; the latest is
+`fix/rfq-project-scope-and-approval` (`cad611e`), containing Projects Phases 1-5,
+the client Audit 1.0 fixes (server-side checks, membership log, view gating) and
+the RFQ project-scope / approval-routing work. `dev` and `main` are untouched.
+Production is reported to be running the release with `APP_DEBUG=false` and RBAC
+enforcement ON. Later fixes (audit, RFQ) were done as Developer → QA (mutation
+proofs) → one Verifier pass, with the human approving commits; schema and
+permission-engine changes still get a Verifier. Migrations to run BEFORE the code:
+`2026_09_24_000006`, `2026_09_26_000001`; keep the guarded `2026_09_25_*` out.
+
+Phase 5 history (built in STRICT mode):
 
 - **5a (code, `344e857`):** quote visibility is project-only. `Quote::visibleTo`
   = project visible AND (`estimate_management` R OR author); NULL-project quotes
@@ -130,6 +155,7 @@ mode) is committed on `feature/projects-entity-phase5`. Neither branch is pushed
 - `ProjectBackfillTest` and the legacy schema tests are deleted with 5b; the
   backfill command is removed 30 days after 5b.
 
-Phases 3-5 must never deploy without the Phase 2 backfill. Nothing has been run
-on production; the gates (B1, B5, B12, backup, pre-flight queries) are listed in
-the memory note. Plan and review trail: `.claude/tasks/projects-entity/`.
+Phases 3-5 must never deploy without the Phase 2 backfill. The production gates
+(B1, B5, B12, test-restored backup, pre-flight queries) and all open tasks are in
+HANDOVER.md section 7. Plan and review trail: `.claude/tasks/projects-entity/`
+(untracked; back it up).

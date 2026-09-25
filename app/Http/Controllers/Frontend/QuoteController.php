@@ -29,6 +29,7 @@ class QuoteController extends Controller
      */
     public function index()
     {
+        $this->requireEstimateLevel('R');
         return view('user.quotes.index');
     }
 
@@ -157,6 +158,7 @@ class QuoteController extends Controller
 
     private function creatableProject(Project $project): Project
     {
+        $this->requireEstimateLevel('S');
         $project = $this->visibleProject($project);
         $userId = (int) Auth::id();
 
@@ -186,6 +188,18 @@ class QuoteController extends Controller
         );
 
         return $quote;
+    }
+
+    private function requireEstimateLevel(string $level, ?int $projectId = null): void
+    {
+        $userId = (int) Auth::id();
+        $orgId = (int) CurrentOrg::id($userId);
+
+        abort_unless(
+            $orgId > 0 && app(PermissionService::class)->checkPermission($userId, $orgId, 'estimate_management', $level, $projectId),
+            403,
+            'You do not have permission to perform this action.'
+        );
     }
 
     private function canReadTeamQuotes(int $userId, ?int $orgId): bool
@@ -770,6 +784,7 @@ class QuoteController extends Controller
 
     public function getCustomersForEstimate()
     {
+        $this->requireEstimateLevel('R');
         $customers = Customer::query()
             ->where('user_id', Auth::id())
             ->where('is_active', true)
@@ -824,6 +839,7 @@ class QuoteController extends Controller
 
     public function getProductVariationsForEstimate(Request $request)
     {
+        $this->requireEstimateLevel('R');
         $userId = (int) Auth::id();
         if ($userId <= 0) {
             return response()->json(['items' => []]);
@@ -893,6 +909,7 @@ class QuoteController extends Controller
 
     public function getServicesForEstimate(Request $request)
     {
+        $this->requireEstimateLevel('R');
         $userId = (int) Auth::id();
         if ($userId <= 0) {
             return response()->json(['items' => []]);

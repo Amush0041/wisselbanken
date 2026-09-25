@@ -50,7 +50,7 @@ class UserWorkspaceController extends Controller
         $pendingRfqs = collect();
         if ($orgId && $this->permissions->checkPermission($userId, $orgId, 'quote_rfq_management', 'S')) {
             $pendingRfqs = RfqRequest::where('org_id', $orgId)
-                ->where('status', 'open')
+                ->whereIn('status', ['sent', 'closed'])
                 ->where(function ($q) use ($userId, $orgId) {
                     $q->whereNull('project_id')
                         ->orWhereIn('project_id', Project::visibleTo($userId, $orgId)->select('projects.id'));

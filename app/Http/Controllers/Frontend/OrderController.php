@@ -8,6 +8,7 @@ use App\Models\ProductVariationColor;
 use App\Services\Rbac\PermissionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use App\Support\Rbac\CurrentOrg;
 
 class OrderController extends Controller
 {
@@ -21,6 +22,7 @@ class OrderController extends Controller
 
     public function viewOrders()
     {
+        $this->requireOrgLevel('procurement', 'R');
         $user       = Auth::user();
         $orgId      = session(config('rbac.current_org_session_key'));
         $isOrgAdmin = $this->isOrgAdmin();
@@ -40,6 +42,7 @@ class OrderController extends Controller
 
     public function orderDetail($id)
     {
+        $this->requireOrgLevel('procurement', 'R');
         $user       = Auth::user();
         $orgId      = session(config('rbac.current_org_session_key'));
         $isOrgAdmin = $this->isOrgAdmin();
@@ -71,5 +74,17 @@ class OrderController extends Controller
         } else {
             return back();
         }
+    }
+
+    private function requireOrgLevel(string $group, string $level): void
+    {
+        $userId = (int) Auth::id();
+        $orgId = (int) CurrentOrg::id($userId);
+
+        abort_unless(
+            $orgId > 0 && app(PermissionService::class)->checkPermission($userId, $orgId, $group, $level),
+            403,
+            'You do not have permission to perform this action.'
+        );
     }
 }

@@ -14,11 +14,14 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use App\Services\Rbac\PermissionService;
+use App\Support\Rbac\CurrentOrg;
 
 class CheckoutController extends Controller
 {
     public function checkout()
     {
+        $this->requireOrgLevel('procurement', 'R');
         $pallet = [];
         $palletItems = [];
         $palletAddress = null;
@@ -113,7 +116,9 @@ class CheckoutController extends Controller
     }
 
     public function processCheckout(Request $request)
-    { 
+    {
+        $this->requireOrgLevel('procurement', 'S');
+
         $validator = Validator::make($request->all(), [
             'name' => 'required',
             'project_name' => 'required',
@@ -205,6 +210,14 @@ class CheckoutController extends Controller
                 $orgId = session(config('rbac.current_org_session_key'));
                 if ($orgId) {
                     $routing = app(ApprovalRoutingService::class)->route((int) $orgId, Auth::id());
+                    if (! $routing['auto_approve'] && empty($routing['approver_ids'])) {
+                        DB::rollBack();
+                        $noApprover = 'Your organization has no one who can approve orders. Ask an organization owner to assign an Executive Approver (or another role with approval authority), then try again.';
+
+                        return $request->expectsJson()
+                            ? response()->json(['message' => $noApprover], 422)
+                            : redirect()->back()->withInput()->with('error', $noApprover);
+                    }
                     $initialStatus = $routing['auto_approve'] ? 'pending' : 'pending_approval';
                 }
             }
@@ -349,6 +362,19 @@ class CheckoutController extends Controller
 
     public function checkoutSuccess($order)
     {
+        $this->requireOrgLevel('procurement', 'R');
         return view('frontend.products.checkout-success', compact('order'));
+    }
+
+    private function requireOrgLevel(string $group, string $level): void
+    {
+        $userId = (int) Auth::id();
+        $orgId = (int) CurrentOrg::id($userId);
+
+        abort_unless(
+            $orgId > 0 && app(PermissionService::class)->checkPermission($userId, $orgId, $group, $level),
+            403,
+            'You do not have permission to perform this action.'
+        );
     }
 }

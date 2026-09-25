@@ -1374,8 +1374,10 @@ function renderCreateEstimateForm(data) {
     const formHtml = `
         <div class="quotes-right-header estimate-create-header">
             <div class="estimate-detail-header">
-                <div class="estimate-detail-customer">${quote ? escapeHtml(quote.customer_name || quote.estimate_label || 'Estimate') : 'New Estimate'}</div>
-                <div class="estimate-detail-project">${parentProjectLinkHtml(quote)}</div>
+                <div class="estimate-detail-titles">
+                    <div class="estimate-detail-customer">${quote ? escapeHtml(quote.customer_name || quote.estimate_label || 'Estimate') : 'New Estimate'}</div>
+                    <div class="estimate-detail-project">${parentProjectLinkHtml(quote)}</div>
+                </div>
             </div>
             <div class="estimate-detail-actions">
                 ${_rbacSaveBtn}

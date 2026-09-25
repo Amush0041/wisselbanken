@@ -10,6 +10,7 @@ use App\Models\Rbac\AuditLog;
 use App\Models\Rbac\Delegation;
 use App\Models\Rbac\OrgRelationship;
 use App\Models\Rbac\ProjectMember;
+use App\Models\Rbac\ProjectMemberLog;
 use App\Models\Rbac\Organization;
 use App\Models\Rbac\RoleAssignmentLog;
 use App\Models\Rbac\PermissionGroup;
@@ -505,6 +506,8 @@ class RbacController extends Controller
         $name = $user->name;
 
         DB::transaction(function () use ($user) {
+            ProjectMember::where('user_id', $user->id)->where('is_active', true)->whereNotNull('project_id')->get()
+                ->each(fn ($m) => ProjectMemberLog::record((int) $m->org_id, (int) $m->project_id, (int) $user->id, 'removed', (int) auth()->id()));
             ProjectMember::where('user_id', $user->id)->delete();
 
             // Remove all RBAC data for the user

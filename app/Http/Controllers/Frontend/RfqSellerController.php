@@ -66,6 +66,12 @@ class RfqSellerController extends Controller
             abort_if($authError !== null, 403, $authError);
         }
 
+        abort_unless(
+            $rfq->status === 'sent' && $recipient->status === 'pending',
+            422,
+            'This RFQ is no longer open for responses, or you have already responded to it.'
+        );
+
         $request->validate([
             'total_price' => 'required|numeric|min:0',
             'valid_until' => 'nullable|date|after_or_equal:today',
@@ -96,6 +102,8 @@ class RfqSellerController extends Controller
         $recipient = RfqRecipient::where('rfq_request_id', $rfq->id)
             ->where('seller_org_id', $orgId)
             ->firstOrFail();
+
+        abort_if($rfq->status === 'converted', 422, 'This RFQ has already been converted to an order and can no longer be changed.');
 
         $recipient->update(['status' => 'declined']);
 

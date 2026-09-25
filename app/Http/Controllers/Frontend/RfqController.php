@@ -187,6 +187,9 @@ class RfqController extends Controller
             abort_if($selectedResponse === null, 422, 'No response has been selected for this RFQ.');
 
             $routing = app(ApprovalRoutingService::class)->route((int) $locked->org_id, Auth::id());
+            if (! $routing['auto_approve'] && empty($routing['approver_ids'])) {
+                return null;
+            }
             $initialStatus = $routing['auto_approve'] ? 'pending' : 'pending_approval';
 
             $order = Order::create([
@@ -213,6 +216,14 @@ class RfqController extends Controller
 
             return $order;
         });
+
+        if ($order === null) {
+            $noApprover = 'Your organization has no one who can approve orders. Ask an organization owner to assign an Executive Approver (or another role with approval authority), then try again.';
+
+            return request()->expectsJson()
+                ? response()->json(['message' => $noApprover], 422)
+                : redirect()->back()->with('error', $noApprover);
+        }
 
         $initialStatus = $order->status;
         $successMsg = $initialStatus === 'pending_approval'

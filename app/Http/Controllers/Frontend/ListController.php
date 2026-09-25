@@ -20,17 +20,21 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Yajra\DataTables\Facades\DataTables;
+use App\Services\Rbac\PermissionService;
+use App\Support\Rbac\CurrentOrg;
 
 class ListController extends Controller
 {
     public function viewLists()
     {
+        $this->requireOrgLevel('project_management', 'R');
         $lists = SavedList::with('items')->where('user_id', Auth::user()->id)->orderBy('created_at', 'desc')->get();
         return view('user.lists.viewlist', compact('lists'));
     }
 
     public function viewListDetail($id, $slug, Request $request)
     {
+        $this->requireOrgLevel('project_management', 'R');
         $list = SavedList::with('items')->where('id', $id)->where('user_id', Auth::user()->id)->first();
         $list_items = SavedListItem::where('saved_list_id', $id)->get();
         $product_color_variation_ids = $list_items->pluck('product_color_variation_id')->toArray(); 
@@ -76,6 +80,7 @@ class ListController extends Controller
 
     public function listDetailData($id, Request $request)
     {
+        $this->requireOrgLevel('project_management', 'R');
         $list = SavedList::where('id', $id)
             ->where('user_id', Auth::user()->id)
             ->firstOrFail();
@@ -213,6 +218,7 @@ class ListController extends Controller
 
     public function removList($id)
     {
+        $this->requireOrgLevel('project_management', 'O');
         try {
             // Find the list
             $list = SavedList::find($id);
@@ -242,6 +248,7 @@ class ListController extends Controller
     }
     public function removListItem($id, Request $request)
     {
+        $this->requireOrgLevel('project_management', 'O');
         try {
             $listItem = SavedListItem::where('id', $id)
                 ->where('saved_list_id', $request->list_id)
@@ -266,6 +273,7 @@ class ListController extends Controller
 
     public function updateListItemQuantity(Request $request)
     {
+        $this->requireOrgLevel('project_management', 'O');
         if (!auth()->check()) {
             return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
         }
@@ -298,6 +306,7 @@ class ListController extends Controller
 
     public function updateListInfo(Request $request, $id)
     {
+        $this->requireOrgLevel('project_management', 'O');
         if (!auth()->check()) {
             return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
         }
@@ -345,5 +354,15 @@ class ListController extends Controller
         }
     }
 
- 
+    private function requireOrgLevel(string $group, string $level): void
+    {
+        $userId = (int) Auth::id();
+        $orgId = (int) CurrentOrg::id($userId);
+
+        abort_unless(
+            $orgId > 0 && app(PermissionService::class)->checkPermission($userId, $orgId, $group, $level),
+            403,
+            'You do not have permission to perform this action.'
+        );
+    }
 }

@@ -331,15 +331,18 @@ class RfqProjectScopeTest extends ProjectTestCase
         $this->assertSame('pending_approval', DB::table('orders')->value('status'));
     }
 
-    public function test_g1_convert_follows_checkout_when_the_org_has_no_approver_at_all(): void
+    public function test_g1_convert_is_refused_when_the_org_has_no_approver_at_all(): void
     {
         DB::table('user_org_roles')->where('user_id', $this->procMgr->id)->update(['is_active' => false]);
         $this->assertSame([], (new ApprovalRoutingService)->approverPool($this->orgA->id));
         $rfq = $this->convertible($this->p1);
 
-        $this->actingAs($this->pm)->post(route('rfq.convert', $rfq))->assertRedirect();
+        $this->actingAs($this->pm)->from('/rfq')->post(route('rfq.convert', $rfq))
+            ->assertRedirect('/rfq')
+            ->assertSessionHas('error', 'Your organization has no one who can approve orders. Ask an organization owner to assign an Executive Approver (or another role with approval authority), then try again.');
 
-        $this->assertSame('pending_approval', DB::table('orders')->value('status'));
+        $this->assertSame(0, DB::table('orders')->count());
+        $this->assertSame('closed', DB::table('rfq_requests')->where('id', $rfq)->value('status'));
     }
 
     // ---- G3: convert needs quote_rfq_management F and procurement S ---------------
@@ -1190,35 +1193,16 @@ class RfqProjectScopeTest extends ProjectTestCase
 
     // ---- round 2: dashboard pendingRfqs -------------------------------------------
 
-    /**
-     * The dashboard query filters status = 'open', which the rfq_requests enum never allows (pre-existing).
-     * To exercise the visibility rule the test swaps the table for a copy with a free-text status column.
-     */
-    private function laxRfqStatus(): void
-    {
-        DB::statement('PRAGMA foreign_keys = OFF');
-        Schema::drop('rfq_requests');
-        Schema::create('rfq_requests', function (Blueprint $t) {
-            $t->id();
-            $t->unsignedBigInteger('org_id');
-            $t->unsignedBigInteger('project_id')->nullable();
-            $t->unsignedBigInteger('created_by');
-            $t->string('title');
-            $t->text('notes')->nullable();
-            $t->date('deadline')->nullable();
-            $t->string('status')->default('draft');
-            $t->timestamps();
-        });
-        DB::connection()->getPdo()->sqliteCreateFunction('DATE_FORMAT', fn ($d, $f) => date(str_replace(['%Y', '%m'], ['Y', 'm'], $f), strtotime($d)), 2);
-        Schema::create('saved_list_items', function (Blueprint $t) {
-            $t->id();
-            $t->unsignedBigInteger('saved_list_id')->nullable();
-            $t->timestamps();
-        });
-    }
-
     private function dashboardRfqIds(User $u, array $session = []): array
     {
+        if (! Schema::hasTable('saved_list_items')) {
+            Schema::create('saved_list_items', function (Blueprint $t) {
+                $t->id();
+                $t->unsignedBigInteger('saved_list_id')->nullable();
+                $t->timestamps();
+            });
+            DB::connection()->getPdo()->sqliteCreateFunction('DATE_FORMAT', fn ($d, $f) => date(str_replace(['%Y', '%m'], ['Y', 'm'], $f), strtotime($d)), 2);
+        }
         $ids = $this->actingAs($u)->withSession($session)->get('user-dashboard')->assertOk()
             ->viewData('pendingRfqs')->pluck('id')->map(fn ($i) => (int) $i)->all();
         sort($ids);
@@ -1230,18 +1214,17 @@ class RfqProjectScopeTest extends ProjectTestCase
     public function test_r2_dashboard_hides_rfqs_of_invisible_projects_and_keeps_null_and_visible_ones(string $mode): void
     {
         $this->setMode($mode);
-        $this->laxRfqStatus();
-        $visible = $this->mkRfq($this->p1, null, ['status' => 'open']);
-        $hidden = $this->mkRfq($this->p2, $this->owner, ['status' => 'open', 'title' => 'Hidden dashboard RFQ']);
-        $legacy = $this->mkRfq(null, null, ['status' => 'open']);
-        $closed = $this->mkRfq($this->p1, null, ['status' => 'closed']);
-        $foreign = $this->mkRfq($this->p3, $this->outsider, ['status' => 'open', 'org_id' => $this->orgB->id]);
+        $visible = $this->mkRfq($this->p1, null, ['status' => 'sent']);
+        $hidden = $this->mkRfq($this->p2, $this->owner, ['status' => 'sent', 'title' => 'Hidden dashboard RFQ']);
+        $legacy = $this->mkRfq(null, null, ['status' => 'sent']);
+        $converted = $this->mkRfq($this->p1, null, ['status' => 'converted']);
+        $foreign = $this->mkRfq($this->p3, $this->outsider, ['status' => 'sent', 'org_id' => $this->orgB->id]);
 
         $this->assertSame([$visible, $legacy], $this->dashboardRfqIds($this->est));
         $this->assertSame([$legacy], $this->dashboardRfqIds($this->stranger));
         $this->assertSame([$visible, $hidden, $legacy], $this->dashboardRfqIds($this->owner));
         $this->assertSame([$foreign], $this->dashboardRfqIds($this->outsider));
-        $this->assertNotContains($closed, $this->dashboardRfqIds($this->est));
+        $this->assertNotContains($converted, $this->dashboardRfqIds($this->est));
 
         $html = $this->actingAs($this->est)->get('user-dashboard')->getContent();
         $this->assertStringNotContainsString('Hidden dashboard RFQ', $html);

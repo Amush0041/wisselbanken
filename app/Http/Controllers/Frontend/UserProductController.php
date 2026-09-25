@@ -9,6 +9,8 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Support\Carbon;
+use App\Services\Rbac\PermissionService;
+use App\Support\Rbac\CurrentOrg;
 
 class UserProductController extends Controller
 {
@@ -40,11 +42,13 @@ class UserProductController extends Controller
 
     public function index()
     {
+        $this->requireOrgLevel('product_management', 'R');
         return view('user.user-products.index');
     }
 
     public function list(Request $request)
     {
+        $this->requireOrgLevel('product_management', 'R');
         $userId = (int) Auth::id();
 
         $q = UserProduct::query()
@@ -100,6 +104,7 @@ class UserProductController extends Controller
 
     public function show($id)
     {
+        $this->requireOrgLevel('product_management', 'R');
         $userId = (int) Auth::id();
         $p = UserProduct::query()
             ->forUser($userId)
@@ -145,6 +150,7 @@ class UserProductController extends Controller
 
     public function store(Request $request)
     {
+        $this->requireOrgLevel('product_management', 'S');
         $userId = (int) Auth::id();
         $this->prepareProductRequest($request);
         $validated = $request->validate(self::PRODUCT_RULES);
@@ -166,6 +172,7 @@ class UserProductController extends Controller
 
     public function update(Request $request, $id)
     {
+        $this->requireOrgLevel('product_management', 'O');
         $userId = (int) Auth::id();
         $product = UserProduct::query()->forUser($userId)->whereKey($id)->firstOrFail();
         $this->prepareProductRequest($request);
@@ -185,6 +192,7 @@ class UserProductController extends Controller
 
     public function destroy($id)
     {
+        $this->requireOrgLevel('product_management', 'F');
         $userId = (int) Auth::id();
         $deleted = UserProduct::query()->forUser($userId)->whereKey($id)->delete();
 
@@ -195,6 +203,7 @@ class UserProductController extends Controller
 
     public function duplicate($id)
     {
+        $this->requireOrgLevel('product_management', 'O');
         $userId = (int) Auth::id();
         $product = UserProduct::query()->forUser($userId)->whereKey($id)->firstOrFail();
 
@@ -212,6 +221,7 @@ class UserProductController extends Controller
 
     public function archive($id)
     {
+        $this->requireOrgLevel('product_management', 'O');
         $userId = (int) Auth::id();
         $product = UserProduct::query()->forUser($userId)->whereKey($id)->firstOrFail();
         $product->forceFill([
@@ -226,6 +236,7 @@ class UserProductController extends Controller
 
     public function addVariation(Request $request, $id)
     {
+        $this->requireOrgLevel('product_management', 'O');
         $userId = (int) Auth::id();
         $product = UserProduct::query()->forUser($userId)->whereKey($id)->firstOrFail();
         $validated = $request->validate([
@@ -378,5 +389,17 @@ class UserProductController extends Controller
             ->exists();
 
         return $exists ? $parentId : null;
+    }
+
+    private function requireOrgLevel(string $group, string $level): void
+    {
+        $userId = (int) Auth::id();
+        $orgId = (int) CurrentOrg::id($userId);
+
+        abort_unless(
+            $orgId > 0 && app(PermissionService::class)->checkPermission($userId, $orgId, $group, $level),
+            403,
+            'You do not have permission to perform this action.'
+        );
     }
 }

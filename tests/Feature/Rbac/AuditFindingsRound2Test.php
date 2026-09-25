@@ -413,4 +413,234 @@ class AuditFindingsRound2Test extends ProjectTestCase
 
         $this->assertSame([], $unmapped);
     }
+
+    // ---- every mapped route (P2-A) ---------------------------------------------------
+
+    /**
+     * Authenticated routes that are intentionally NOT in config/route_permission_map.php, with the reason.
+     * Any other authenticated route without a map entry fails test_guard_no_authenticated_route_is_silently_unmapped.
+     */
+    private const OPEN_ROUTES = [
+        'POST logout' => 'ends the caller\'s own session',
+        'GET password/confirm' => 'Laravel auth scaffolding (self-service, own credentials)',
+        'POST password/confirm' => 'Laravel auth scaffolding (self-service, own credentials)',
+        'GET email/verify' => 'Laravel auth scaffolding (own account)',
+        'POST email/resend' => 'Laravel auth scaffolding (own account)',
+        'GET register-complete' => 'registration wizard for the caller\'s own new account',
+        'GET user-dashboard' => 'landing page for any org member; lists only the caller\'s own data',
+        'GET workspace' => 'static workspace view for any org member',
+        'POST org/switch' => 'switches between orgs the caller already belongs to (membership is verified)',
+        'GET org-admin/my-roles' => 'self-scope: caller\'s own roles and delegations',
+        'GET get-list-count' => 'navbar badge on every page; caller\'s own list count',
+        'GET profile' => 'caller\'s own profile',
+        'PUT profile' => 'caller\'s own profile',
+    ];
+
+    /**
+     * Mapped reads that are NOT hard-denied in audit mode. They scope their data to the caller's visible projects
+     * (Project::visibleTo / Quote::visibleTo), and existing suites (ProjectReadPathsTest, ProjectCheckpoint2Test,
+     * ProjectDashboardCountersTest, AuditFindingsTest) pin that behaviour: an org member without the level gets an
+     * empty result or a 404 in audit mode, and the map's 403 only in enforce mode. Awaiting an Architect decision on
+     * whether to add a hard 403 here (ruled: accepted as is). The guard still requires that these leak no fixture data.
+     *
+     * Also accepted as is: writes on project/quote/RFQ/crosswalk-scoped objects resolve visibility first, so a hidden
+     * object answers 404 instead of 403 (still a denial, nothing written); see $hiddenObject in the guard below.
+     */
+    private const DATA_SCOPED_READS = [
+        'GET quotes/list', 'GET quotes/{id}/details', 'GET quotes/{id}/pdf', 'GET quotes/{id}/pdf-preview',
+        'GET projects', 'GET projects/list', 'GET projects/{project}', 'GET projects/{quote}/workspace', 'GET plan-crosswalk',
+    ];
+
+    private const SNAPSHOT_TABLES = [
+        'quotes', 'quote_items', 'customers', 'saved_lists', 'plan_crosswalk', 'rfq_requests', 'rfq_responses', 'orders',
+        'project_member_logs',
+    ];
+
+    private function fullSnapshot(): array
+    {
+        $out = $this->snapshot();
+        foreach (self::SNAPSHOT_TABLES as $t) {
+            if (Schema::hasTable($t)) {
+                $out[$t] = DB::table($t)->orderBy('id')->get()->map(fn ($r) => (array) $r)->all();
+            }
+        }
+
+        return $out;
+    }
+
+    private function mappedRoutes(): array
+    {
+        $routes = collect(Route::getRoutes()->getRoutes());
+        $out = [];
+        foreach (config('route_permission_map') as $key => $rule) {
+            [$method, $uri] = explode(' ', $key, 2);
+            $route = $routes->first(fn ($r) => $r->uri() === $uri && ($method === '*' || in_array($method, $r->methods(), true)));
+            $out[$key] = ['method' => $method === '*' ? 'GET' : $method, 'uri' => $uri, 'rule' => $rule, 'route' => $route];
+        }
+
+        return $out;
+    }
+
+    /** @return array<string, int|string> */
+    private function mappedFixtures(User $viewer): array
+    {
+        if (! Schema::hasTable('orders')) {
+            Schema::create('orders', function (Blueprint $t) {
+                $t->id();
+                $t->unsignedBigInteger('user_id')->nullable();
+                $t->unsignedBigInteger('org_id')->nullable();
+                $t->string('order_number')->nullable();
+                $t->string('status')->nullable();
+                $t->timestamps();
+            });
+        }
+
+        foreach (DB::table('projects')->pluck('id') as $id) {
+            DB::table('projects')->where('id', $id)->update(['name' => "LEAK-P$id"]);
+        }
+        foreach (DB::table('quotes')->pluck('id') as $id) {
+            DB::table('quotes')->where('id', $id)->update(['quote_number' => "LEAK-Q$id"]);
+        }
+
+        $now = now();
+        $rfq = (int) DB::table('rfq_requests')->insertGetId([
+            'org_id' => $this->orgA->id, 'created_by' => $this->est->id, 'project_id' => $this->p1, 'title' => 'R', 'status' => 'sent',
+            'created_at' => $now, 'updated_at' => $now,
+        ]);
+
+        return [
+            'id' => 1,
+            'quoteId' => $this->q1,
+            'quote' => $this->q1,
+            'itemId' => 1,
+            'listId' => 1,
+            'slug' => 'x',
+            'project' => $this->p1,
+            'projectMember' => $this->memberRowId($this->p1, $this->est),
+            'order' => (int) DB::table('orders')->insertGetId(['user_id' => $this->est->id, 'org_id' => $this->orgA->id, 'order_number' => 'O-1', 'status' => 'pending_approval', 'created_at' => $now, 'updated_at' => $now]),
+            'rfq' => $rfq,
+            'response' => (int) DB::table('rfq_responses')->insertGetId(['rfq_request_id' => $rfq, 'seller_org_id' => $this->orgB->id, 'created_by' => $this->outsider->id, 'total_price' => 1, 'created_at' => $now, 'updated_at' => $now]),
+            'planCrosswalk' => (int) DB::table('plan_crosswalk')->insertGetId(['org_id' => $this->orgA->id, 'quote_id' => $this->q1, 'project_id' => $this->p1, 'plan_line_code' => 'LEAK-L1', 'created_by' => $this->est->id, 'created_at' => $now, 'updated_at' => $now]),
+            'userOrgRole' => (int) DB::table('user_org_roles')->where('org_id', $this->orgA->id)->where('user_id', $this->super->id)->value('id'),
+            'orgRelationship' => (int) DB::table('org_relationships')->insertGetId(['from_org_id' => $this->orgA->id, 'to_org_id' => $this->orgB->id, 'relationship_type' => 'buyer_seller', 'is_active' => true, 'created_at' => $now, 'updated_at' => $now]),
+            'delegation' => $this->delegationFrom($viewer),
+            'apiToken' => $this->tokenFor($viewer),
+        ];
+    }
+
+    private function mappedUri(string $uri, array $fixtures): string
+    {
+        return preg_replace_callback('/\{(\w+)\??\}/', function ($m) use ($fixtures, $uri) {
+            $this->assertArrayHasKey($m[1], $fixtures, "no fixture for {{$m[1]}} in $uri; add one so the guard can reach the check");
+
+            return (string) $fixtures[$m[1]];
+        }, $uri);
+    }
+
+    private function isPlatformAdminRoute(array $entry): bool
+    {
+        return $entry['route'] !== null && in_array('checkRole:admin', $entry['route']->gatherMiddleware(), true);
+    }
+
+    #[DataProvider('modes')]
+    public function test_guard_every_mapped_route_denies_roles_below_its_level_and_writes_nothing(string $mode): void
+    {
+        $this->setMode($mode);
+        $lowest = $this->mkUser($this->orgA, 'inventory_manager');
+        $fixtures = $this->mappedFixtures($this->viewer);
+        $perm = app(PermissionService::class);
+        $quoteProject = [$this->q1 => $this->p1];
+        $exercised = ['viewer' => 0, 'lowest' => 0];
+        $viewerSkipped = [];
+        $unresolved = [];
+        $covered = 0;
+
+        foreach ($this->mappedRoutes() as $key => $e) {
+            if ($e['route'] === null) {
+                $unresolved[] = $key;
+                continue;
+            }
+            if ($this->isPlatformAdminRoute($e) || ! method_exists($e['route']->getControllerClass() ?? '', $e['route']->getActionMethod())) {
+                continue;
+            }
+
+            $covered++;
+            $rule = $e['rule'];
+            $projectId = isset($rule['project_param']) ? $this->p1 : (isset($rule['quote_param']) ? $quoteProject[$this->q1] : null);
+            $url = $this->mappedUri($e['uri'], $fixtures);
+
+            foreach (['viewer' => $this->viewer, 'lowest' => $lowest] as $label => $actor) {
+                $grants = $perm->checkPermission($actor->id, $this->orgA->id, $rule[0], $rule[1], $projectId);
+                if ($grants) {
+                    $this->assertSame('viewer', $label, "$key: the lowest role must hold none of the mapped groups");
+                    $viewerSkipped[] = $key;
+                    continue;
+                }
+
+                $before = $this->fullSnapshot();
+                $r = $this->req2($actor, $e['method'], $url, []);
+                $status = $r->getStatusCode();
+
+                // Writes on project/quote/RFQ-scoped objects resolve visibility first, so a hidden object is a 404 (still a denial, nothing written).
+                $hiddenObject = isset($rule['quote_param']) || ($label === 'lowest' && (isset($rule['project_param']) || str_contains($e['uri'], '{rfq}') || str_contains($e['uri'], '{planCrosswalk}')));
+                if (in_array($key, self::DATA_SCOPED_READS, true)) {
+                    $this->assertContains($status, [200, 403, 404], "$key ($mode)");
+                    $this->assertStringNotContainsString('LEAK-', (string) $r->getContent(), "$key leaked project data to $label ($mode)");
+                } else {
+                    $this->assertContains($status, $hiddenObject ? [403, 404] : [403], "$key served $label with $status ($mode)");
+                }
+                $this->assertSame($before, $this->fullSnapshot(), "$key changed the database for $label ($mode)");
+                $exercised[$label]++;
+            }
+        }
+
+        $this->assertSame([], $unresolved, 'mapped routes that do not exist; fix the map or the route');
+        foreach ($viewerSkipped as $key) {
+            $this->assertSame('R', config('route_permission_map')[$key][1], "$key is a state-changing or higher-level route that viewer_read_only was NOT denied");
+        }
+        $this->assertSame($covered, $exercised['lowest']);
+        $this->assertSame($covered, $exercised['viewer'] + count($viewerSkipped));
+        $this->assertGreaterThan(100, $covered);
+    }
+
+    public function test_guard_mapped_platform_admin_routes_sit_behind_check_role_admin(): void
+    {
+        $unguarded = [];
+        foreach ($this->mappedRoutes() as $key => $e) {
+            if (str_starts_with($e['uri'], 'admin/') && $e['route'] !== null && ! $this->isPlatformAdminRoute($e)) {
+                $unguarded[] = $key;
+            }
+        }
+        $this->assertSame([], $unguarded);
+
+        $this->setMode('audit');
+        $before = $this->fullSnapshot();
+        foreach (['GET admin/dashboard', 'GET admin/rbac', 'POST admin/rbac/enforcement/toggle-mode'] as $key) {
+            [$method, $uri] = explode(' ', $key, 2);
+            $r = $this->req2($this->viewer, $method, $uri, ['mode' => 'enforce']);
+            $this->assertContains($r->getStatusCode(), [302, 403], "$key served an org user with {$r->getStatusCode()}");
+        }
+        $this->assertSame($before, $this->fullSnapshot());
+        $this->assertSame('audit', \App\Models\Rbac\RbacSetting::get('rbac_mode'));
+    }
+
+    public function test_guard_no_authenticated_route_is_silently_unmapped(): void
+    {
+        $map = config('route_permission_map');
+        $silent = [];
+
+        foreach (Route::getRoutes()->getRoutes() as $route) {
+            if (! in_array('auth', $route->gatherMiddleware(), true)) {
+                continue;
+            }
+            foreach ($route->methods() as $m) {
+                $key = "$m {$route->uri()}";
+                if ($m !== 'HEAD' && ! isset($map[$key]) && ! isset($map["* {$route->uri()}"]) && ! isset(self::OPEN_ROUTES[$key])) {
+                    $silent[] = $key;
+                }
+            }
+        }
+
+        $this->assertSame([], $silent, 'authenticated routes need a route_permission_map entry (and a controller check) or an OPEN_ROUTES entry with a reason');
+    }
 }

@@ -1,0 +1,16 @@
+# Authenticated routes with no entry in config/route_permission_map.php
+# METHOD uri | controller action | middleware
+GET email/verify | App\Http\Controllers\Auth\VerificationController@show | web,Illuminate\Auth\Middleware\Authenticate
+GET get-list-count | App\Http\Controllers\Frontend\PalletProductController@getListCount | web,Illuminate\Auth\Middleware\Authenticate,Illuminate\Auth\Middleware\EnsureEmailIsVerified,App\Http\Middleware\CheckRole:user
+GET org-admin/my-roles | App\Http\Controllers\Frontend\OrgAdminController@myRoles | web,Illuminate\Auth\Middleware\Authenticate,Illuminate\Auth\Middleware\EnsureEmailIsVerified,App\Http\Middleware\CheckRole:user
+GET password/confirm | App\Http\Controllers\Auth\ConfirmPasswordController@showConfirmForm | web,Illuminate\Auth\Middleware\Authenticate
+GET profile | App\Http\Controllers\Frontend\ProfileController@edit | web,Illuminate\Auth\Middleware\Authenticate,Illuminate\Auth\Middleware\EnsureEmailIsVerified,App\Http\Middleware\CheckRole:user
+GET register-complete | App\Http\Controllers\Auth\RegisterController@complete | web,Illuminate\Auth\Middleware\Authenticate
+GET test-session | Closure | web,Illuminate\Auth\Middleware\Authenticate,Illuminate\Auth\Middleware\EnsureEmailIsVerified,App\Http\Middleware\CheckRole:user
+GET user-dashboard | App\Http\Controllers\Frontend\UserWorkspaceController@index | web,Illuminate\Auth\Middleware\Authenticate,Illuminate\Auth\Middleware\EnsureEmailIsVerified,App\Http\Middleware\CheckRole:user
+GET workspace | Illuminate\Routing\ViewController | web,Illuminate\Auth\Middleware\Authenticate,Illuminate\Auth\Middleware\EnsureEmailIsVerified,App\Http\Middleware\CheckRole:user
+POST email/resend | App\Http\Controllers\Auth\VerificationController@resend | web,Illuminate\Auth\Middleware\Authenticate,Illuminate\Routing\Middleware\ThrottleRequests:6,1
+POST logout | App\Http\Controllers\Auth\LoginController@logout | web,Illuminate\Auth\Middleware\Authenticate
+POST org/switch | App\Http\Controllers\Frontend\OrgSwitchController@switch | web,Illuminate\Auth\Middleware\Authenticate,Illuminate\Auth\Middleware\EnsureEmailIsVerified,App\Http\Middleware\CheckRole:user
+POST password/confirm | App\Http\Controllers\Auth\ConfirmPasswordController@confirm | web,Illuminate\Auth\Middleware\Authenticate
+PUT profile | App\Http\Controllers\Frontend\ProfileController@update | web,Illuminate\Auth\Middleware\Authenticate,Illuminate\Auth\Middleware\EnsureEmailIsVerified,App\Http\Middleware\CheckRole:user

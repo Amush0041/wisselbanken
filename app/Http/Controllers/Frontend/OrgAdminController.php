@@ -585,6 +585,8 @@ class OrgAdminController extends Controller
             return redirect()->route('user.dashboard')->with('error', 'No organization context.');
         }
 
+        $this->requireOrgLevel($org, 'project_management', 'R');
+
         $memberIds = UserOrgRole::where('org_id', $org->id)->where('is_active', true)->pluck('user_id')->unique();
 
         $projects = Project::where('org_id', $org->id)
