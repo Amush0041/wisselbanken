@@ -6,7 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Models\PlanCrosswalk;
 use App\Models\Product;
 use App\Models\Quote;
+use App\Models\Project;
 use App\Models\Rbac\UserOrgRole;
+use App\Services\Rbac\PermissionService;
+use App\Support\Rbac\CurrentOrg;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -25,21 +28,35 @@ class PlanCrosswalkController extends Controller
 {
     public function index(Request $request)
     {
-        $orgId = $this->currentOrgId();
-
-        // Load projects (quotes) this org owns so the user can filter by project.
-        $projects = Quote::where('org_id', $orgId)
-            ->orderBy('created_at', 'desc')
-            ->get(['id', 'title', 'created_at']);
+        $userId = (int) Auth::id();
+        $orgId = CurrentOrg::id($userId);
 
         $selectedQuoteId = $request->integer('project_id') ?: null;
 
-        $rows = PlanCrosswalk::with(['product', 'quote', 'creator'])
-            ->where('org_id', $orgId)
-            ->when($selectedQuoteId, fn ($q) => $q->where('quote_id', $selectedQuoteId))
-            ->orderBy('quote_id')
-            ->orderBy('plan_line_code')
-            ->get();
+        if ($orgId === null) {
+            $projects = collect();
+            $rows = collect();
+        } else {
+            $members = app(PermissionService::class)->checkPermission($userId, $orgId, 'estimate_management', 'R');
+
+            $projects = Quote::visibleTo($userId, $orgId, $members)
+                ->orderBy('created_at', 'desc')
+                ->get(['id', 'name as title', 'created_at']);
+
+            $rows = PlanCrosswalk::with(['product', 'quote', 'creator'])
+                ->where('org_id', $orgId)
+                ->where(function ($q) use ($userId, $orgId, $members) {
+                    $q->whereIn('quote_id', Quote::visibleTo($userId, $orgId, $members)->select('quotes.id'));
+
+                    if ($members) {
+                        $q->orWhereIn('project_id', Project::visibleTo($userId, $orgId)->select('projects.id'));
+                    }
+                })
+                ->when($selectedQuoteId, fn ($q) => $q->where('quote_id', $selectedQuoteId))
+                ->orderBy('quote_id')
+                ->orderBy('plan_line_code')
+                ->get();
+        }
 
         return view('user.plan-crosswalk.index', compact('rows', 'projects', 'selectedQuoteId'));
     }
@@ -114,6 +131,6 @@ class PlanCrosswalkController extends Controller
 
     private function currentOrgId(): int
     {
-        return (int) session(config('rbac.current_org_session_key'));
+        return CurrentOrg::id((int) Auth::id()) ?? 0;
     }
 }

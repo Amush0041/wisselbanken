@@ -11,8 +11,10 @@
 |          params shown as {param} matching the route definition exactly).
 |          Use "* uri" only when ALL verbs on that URI share the same level.
 | Value : [permission_group_slug, required_level, 'batch' => batch, 'project_param' => param]
+|          or [..., 'quote_param' => param]  (never both)
 |          - batch: 'admin' | 'read' | 'write' | 'approve'  (Phase 3 enforcement order)
-|          - project_param: name of the route param holding the quote/project id
+|          - project_param: name of the route param holding a projects.id
+|          - quote_param: name of the route param holding a quotes.id (resolved to its project)
 |
 | Anything not listed is ignored by RbacAudit (no check, passes through).
 | Routes guarded only by the legacy checkRole:admin are still listed here so
@@ -89,7 +91,7 @@ return [
     'GET org-admin/projects'                            => ['project_management', 'R', 'batch' => 'read'],
     'POST org-admin/projects/members'                   => ['project_management', 'F', 'batch' => 'admin'],
     'DELETE org-admin/projects/members/{projectMember}' => ['project_management', 'F', 'batch' => 'admin'],
-    'GET projects/{quote}/workspace'                    => ['estimate_management', 'R', 'batch' => 'read'],
+    'GET projects/{quote}/workspace'                    => ['estimate_management', 'R', 'batch' => 'read', 'quote_param' => 'quote'],
 
     // =========================================================================
     // SAVED LISTS
@@ -118,23 +120,23 @@ return [
     'GET quotes/customers'                    => ['estimate_management', 'R', 'batch' => 'read'],
     'GET quotes/product-variations'           => ['estimate_management', 'R', 'batch' => 'read'],
     'GET quotes/services'                     => ['estimate_management', 'R', 'batch' => 'read'],
-    'GET quotes/{id}/details'                 => ['estimate_management', 'R', 'batch' => 'read',    'project_param' => 'id'],
-    'GET quotes/{id}/pdf-preview'             => ['estimate_management', 'R', 'batch' => 'read',    'project_param' => 'id'],
-    'GET quotes/{id}/pdf'                     => ['estimate_management', 'R', 'batch' => 'read',    'project_param' => 'id'],
+    'GET quotes/{id}/details'                 => ['estimate_management', 'R', 'batch' => 'read',    'quote_param' => 'id'],
+    'GET quotes/{id}/pdf-preview'             => ['estimate_management', 'R', 'batch' => 'read',    'quote_param' => 'id'],
+    'GET quotes/{id}/pdf'                     => ['estimate_management', 'R', 'batch' => 'read',    'quote_param' => 'id'],
 
     // Submit — create new estimates (S: can create, cannot approve)
     'POST quotes'                             => ['estimate_management', 'S', 'batch' => 'write'],
     'POST quotes/create-from-list/{listId}'   => ['estimate_management', 'S', 'batch' => 'write'],
-    'POST quotes/{id}/duplicate'              => ['estimate_management', 'O', 'batch' => 'write',   'project_param' => 'id'],
+    'POST quotes/{id}/duplicate'              => ['estimate_management', 'O', 'batch' => 'write',   'quote_param' => 'id'],
 
     // Own — edit existing estimates the user owns
-    'PUT quotes/{id}'                         => ['estimate_management', 'O', 'batch' => 'write',   'project_param' => 'id'],
-    'PUT quotes/{id}/editor'                  => ['estimate_management', 'O', 'batch' => 'write',   'project_param' => 'id'],
-    'PUT quotes/{quoteId}/items/{itemId}'     => ['estimate_management', 'O', 'batch' => 'write',   'project_param' => 'quoteId'],
+    'PUT quotes/{id}'                         => ['estimate_management', 'O', 'batch' => 'write',   'quote_param' => 'id'],
+    'PUT quotes/{id}/editor'                  => ['estimate_management', 'O', 'batch' => 'write',   'quote_param' => 'id'],
+    'PUT quotes/{quoteId}/items/{itemId}'     => ['estimate_management', 'O', 'batch' => 'write',   'quote_param' => 'quoteId'],
 
     // Full — delete estimates and line items (approve-batch: highest stakes)
-    'DELETE quotes/{id}'                      => ['estimate_management', 'F', 'batch' => 'approve', 'project_param' => 'id'],
-    'DELETE quotes/{quoteId}/items/{itemId}'  => ['estimate_management', 'F', 'batch' => 'approve', 'project_param' => 'quoteId'],
+    'DELETE quotes/{id}'                      => ['estimate_management', 'F', 'batch' => 'approve', 'quote_param' => 'id'],
+    'DELETE quotes/{quoteId}/items/{itemId}'  => ['estimate_management', 'F', 'batch' => 'approve', 'quote_param' => 'quoteId'],
 
     // =========================================================================
     // CUSTOMERS  (org-scoped buyer data)

@@ -9,7 +9,7 @@ use App\Services\Rbac\PermissionService;
  * remains the single source of truth; this just makes call sites terse.
  *
  *   Rbac::check($user->id, $orgId, 'procurement', 'S');
- *   Rbac::check($user->id, $orgId, 'estimate_management', 'F', $quoteId);
+ *   Rbac::check($user->id, $orgId, 'estimate_management', 'F', $projectId);  // $projectId is a projects.id
  */
 class Rbac
 {

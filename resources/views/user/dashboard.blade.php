@@ -81,7 +81,7 @@
         <div class="card-header py-3 d-flex justify-content-between align-items-center">
             <h6 class="mb-0"><i class="ti ti-folders me-1 text-muted"></i>My Projects</h6>
             @if (!empty($canManageProjects) && $canManageProjects)
-            <a href="{{ route('org-admin.projects') }}" class="btn btn-xs btn-outline-secondary">Manage</a>
+            <a href="{{ route('org-admin.projects.index') }}" class="btn btn-xs btn-outline-secondary">Manage</a>
             @endif
         </div>
         <div class="card-body p-0">

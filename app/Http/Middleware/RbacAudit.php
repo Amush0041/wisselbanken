@@ -2,10 +2,12 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Quote;
 use App\Models\Rbac\AuditLog;
 use App\Models\Rbac\RbacSetting;
 use App\Services\Rbac\PermissionService;
 use Closure;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\Response;
@@ -54,15 +56,19 @@ class RbacAudit
             return $next($request);
         }
 
-        [$pattern, $group, $level, $batch, $projectParam] = $rule;
+        [$pattern, $group, $level, $batch, $projectParam, $quoteParam] = $rule;
 
         $userId = $request->user()->id;
         $orgId = $this->currentOrgId($request, $userId);
-        $projectId = $projectParam ? (int) $request->route($projectParam) : null;
+        [$projectId, $quoteId, $unresolved] = $this->resolveScope($request, $projectParam, $quoteParam);
 
         // A user with no organization context can satisfy no permission.
         if ($orgId === null) {
-            return $this->fail($request, $next, $pattern, $group, $level, $projectId, $batch, 'no_org', null);
+            return $this->fail($request, $next, $pattern, $group, $level, $projectId, $quoteId, $batch, 'no_org', null);
+        }
+
+        if ($unresolved) {
+            return $this->fail($request, $next, $pattern, $group, $level, $projectId, $quoteId, $batch, 'project_unresolved', $orgId);
         }
 
         if ($this->permissions->checkPermission($userId, $orgId, $group, $level, $projectId)) {
@@ -71,7 +77,60 @@ class RbacAudit
 
         $reason = ($projectId !== null) ? 'no_grant_or_not_project_member' : 'no_grant';
 
-        return $this->fail($request, $next, $pattern, $group, $level, $projectId, $batch, $reason, $orgId);
+        return $this->fail($request, $next, $pattern, $group, $level, $projectId, $quoteId, $batch, $reason, $orgId);
+    }
+
+    /**
+     * Resolve the route's project scope to a projects.id (and, for quote-scoped routes, the
+     * quotes.id). A scoped route whose project cannot be resolved is unresolved and fails closed.
+     *
+     * @return array{0:?int,1:?int,2:bool} [projectId, quoteId, unresolved]
+     */
+    private function resolveScope(Request $request, ?string $projectParam, ?string $quoteParam): array
+    {
+        if ($projectParam !== null) {
+            $projectId = $this->positiveId($request->route($projectParam));
+
+            return [$projectId, null, $projectId === null];
+        }
+
+        if ($quoteParam === null) {
+            return [null, null, false];
+        }
+
+        $value = $request->route($quoteParam);
+
+        if ($value instanceof Model) {
+            $projectId = $value->getAttribute('project_id');
+
+            return [$projectId !== null ? (int) $projectId : null, (int) $value->getKey(), $projectId === null];
+        }
+
+        $quoteId = $this->positiveId($value);
+        if ($quoteId === null) {
+            return [null, null, true];
+        }
+
+        $projectId = Quote::withTrashed()->whereKey($quoteId)->value('project_id');
+
+        return [$projectId !== null ? (int) $projectId : null, $quoteId, $projectId === null];
+    }
+
+    private function positiveId(mixed $value): ?int
+    {
+        if ($value instanceof Model) {
+            $value = $value->getKey();
+        }
+
+        if (is_int($value)) {
+            return $value > 0 ? $value : null;
+        }
+
+        if (is_string($value) && ctype_digit($value) && (int) $value > 0) {
+            return (int) $value;
+        }
+
+        return null;
     }
 
     /**
@@ -84,6 +143,7 @@ class RbacAudit
         string $group,
         string $level,
         ?int $projectId,
+        ?int $quoteId,
         ?string $batch,
         string $reason,
         ?int $orgId,
@@ -99,6 +159,7 @@ class RbacAudit
             'permission_group' => $group,
             'required_level' => $level,
             'project_id' => $projectId,
+            'quote_id' => $quoteId,
             'batch' => $batch,
             'outcome' => $enforcing ? 'blocked' : 'would_block',
             'reason' => $reason,
@@ -130,9 +191,9 @@ class RbacAudit
 
     /**
      * Look up the matching map rule for this request, trying the exact method first then
-     * the '*' wildcard. Returns [pattern, group, level, batch, projectParam] or null.
+     * the '*' wildcard. Returns [pattern, group, level, batch, projectParam, quoteParam] or null.
      *
-     * @return array{0:string,1:string,2:string,3:?string,4:?string}|null
+     * @return array{0:string,1:string,2:string,3:?string,4:?string,5:?string}|null
      */
     private function ruleForRequest(Request $request): ?array
     {
@@ -157,6 +218,7 @@ class RbacAudit
                 $value[1],
                 $value['batch'] ?? null,
                 $value['project_param'] ?? null,
+                $value['quote_param'] ?? null,
             ];
         }
 

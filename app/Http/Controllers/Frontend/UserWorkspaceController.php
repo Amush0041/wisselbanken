@@ -3,12 +3,13 @@
 namespace App\Http\Controllers\Frontend;
 
 use App\Http\Controllers\Controller;
+use App\Models\Project;
 use App\Models\Quote;
 use App\Models\RfqRequest;
 use App\Models\Rbac\Organization;
-use App\Models\Rbac\ProjectMember;
 use App\Models\Rbac\UserOrgRole;
 use App\Services\Rbac\PermissionService;
+use App\Support\Rbac\CurrentOrg;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
@@ -30,10 +31,9 @@ class UserWorkspaceController extends Controller
         $orgId  = $this->currentOrgId();
 
         // My projects: quotes where this user has an active project_members entry.
-        $myProjectIds = ProjectMember::where('user_id', $userId)
-            ->where('org_id', $orgId)
-            ->where('is_active', true)
-            ->pluck('quote_id');
+        $myProjectIds = $orgId
+            ? Quote::whereIn('project_id', Project::visibleTo($userId, $orgId)->select('projects.id'))->pluck('id')
+            : collect();
 
         $myProjects = collect();
         if ($orgId && $myProjectIds->isNotEmpty()) {
@@ -107,7 +107,6 @@ class UserWorkspaceController extends Controller
 
     private function currentOrgId(): ?int
     {
-        $id = session(config('rbac.current_org_session_key'));
-        return $id ? (int) $id : null;
+        return CurrentOrg::id((int) Auth::id());
     }
 }

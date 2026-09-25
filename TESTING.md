@@ -11,10 +11,11 @@ php artisan test                  # full suite
 Laravel scaffolding — not meaningful coverage, don't count them toward
 anything.
 
-## Known-failing baseline (as of 2026-09-23)
+## Known-failing baseline (as of 2026-09-25, Phase 3 Checkpoint 2 run)
 
-The RBAC suite is **55 passed / 3 failed, 113 assertions**. These 3 failures
-are pre-existing and independent of any feature work — do not report them as
+The RBAC suite is **383 passed / 3 failed, 3094 assertions**. (The earlier
+baseline of 55 passed / 3 failed, 113 assertions was measured **before** the
+projects work.) These 3 failures are pre-existing and independent of any feature work — do not report them as
 a regression you introduced, and do not treat a *new* failure as "probably
 one of the known ones" without checking it's actually one of these three by
 name:
@@ -24,7 +25,9 @@ name:
    user with no org, actually gets a 302 redirect. Likely cause: the
    no-org path redirects (e.g. to an org-selection screen) rather than
    returning 403 under full enforcement. Needs a decision on intended
-   behavior before fixing.
+   behavior before fixing. Non-JSON denials redirect back (302) by design in
+   `RbacAudit::fail()`; new tests assert denials with JSON requests; this is
+   Known open item #4 and is unchanged.
 
 2. **`SeedMatrixTest::seeds expected counts`**
    (`tests/Feature/Rbac/SeedMatrixTest.php:20`) — asserts 20 organization
@@ -48,6 +51,17 @@ If a feature touches roles, org types, or the audit middleware, flag these
 three explicitly in that task's `REVIEW.md` so a fix doesn't get bundled
 into an unrelated PR by accident.
 
+## Projects tests
+
+- `ProjectSchemaTest` — schema, migration guards, `ProjectMember::enrol()`.
+- `ProjectBackfillTest` — the `projects:backfill` command.
+- `ProjectMembershipTest` — membership and `RbacAudit` quote/project resolution.
+- `ProjectReadPathsTest` — controller read paths, dual-read, H7/H9 rules.
+- `RoutePermissionMapTest` — route-permission map lint.
+- `ProjectTestCase` — shared base for the projects tests.
+- `PermissionServiceTest::test_project_scoping_requires_membership` — rewritten
+  onto `projects` / `project_members.project_id`.
+
 ## RBAC test patterns
 
 - `tests/Feature/Rbac/RbacTestCase.php` is the shared base — use it (or its
@@ -57,3 +71,16 @@ into an unrelated PR by accident.
   (quote) scoped — missing `project_members` row denial.
 - SOD-sensitive role assignments: test both directions (the 8 rules in
   `sod_conflict_rules` are bidirectional).
+- Id-collision fixture: a quote id equal to another project's id, to catch a
+  quote id being read as a project id.
+- Group-separation fixture: a role holding `procurement:R` only versus one
+  holding `estimate_management:R` only, to prove the controller checks the
+  right permission group.
+- Enforce-mode tests use JSON requests (403); non-JSON denials are 302 by design.
+- Mutation-proof practice: apply each load-bearing mutation on a scratch copy
+  of the repo (never the tracked files) and show the named test fails; route
+  every surviving mutant back to the Architect.
+- Tests run on in-memory sqlite and never touch the real database. What sqlite
+  cannot prove (locks, savepoints, collation, timezones, real volume, file
+  modes) is listed in the B1 checklists (Phases 1, 2 and 3) in
+  `.claude/tasks/projects-entity/PLAN.md`.

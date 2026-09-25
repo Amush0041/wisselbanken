@@ -10,6 +10,7 @@ use App\Models\Rbac\UserOrgRole;
 use App\Models\User;
 use App\Services\Rbac\OrgRelationshipService;
 use App\Services\Rbac\PermissionService;
+use App\Support\Rbac\CurrentOrg;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
@@ -35,16 +36,16 @@ class ProjectWorkspaceController extends Controller
         // Gate: user must have estimate_management:R AND be an active project member.
         $userId = Auth::id();
 
-        $allowed = $this->permissions->checkPermission(
+        $allowed = $quote->project_id !== null && $this->permissions->checkPermission(
             userId: $userId,
             orgId: $orgId,
             permissionGroup: 'estimate_management',
             requiredLevel: 'R',
-            projectId: $quote->id,
+            projectId: (int) $quote->project_id,
         );
 
         if (! $allowed) {
-            return redirect()->route('org-admin.projects')
+            return redirect()->route('org-admin.projects.index')
                 ->with('error', 'You are not a member of this project or do not have the required permission.');
         }
 
@@ -106,6 +107,6 @@ class ProjectWorkspaceController extends Controller
 
     private function currentOrgId(): int
     {
-        return (int) session(config('rbac.current_org_session_key'));
+        return CurrentOrg::id((int) Auth::id()) ?? 0;
     }
 }

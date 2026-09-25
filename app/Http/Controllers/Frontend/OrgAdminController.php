@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Frontend;
 use App\Exceptions\Rbac\SodConflictException;
 use App\Http\Controllers\Controller;
 use App\Mail\OrgInviteMail;
+use App\Models\Project;
 use App\Models\Quote;
 use App\Models\Rbac\ApiToken;
 use App\Models\Rbac\Delegation;
@@ -560,18 +561,27 @@ class OrgAdminController extends Controller
         // All org member user ids.
         $memberIds = UserOrgRole::where('org_id', $org->id)->where('is_active', true)->pluck('user_id')->unique();
 
-        // Quotes owned by any org member.
-        $quotes = Quote::whereIn('user_id', $memberIds)
+        // Quotes owned by any org member, or belonging to one of this org's live projects.
+        $quotes = Quote::where(function ($q) use ($memberIds, $org) {
+                $q->whereIn('user_id', $memberIds)
+                    ->orWhereIn('project_id', Project::where('org_id', $org->id)->select('projects.id'));
+            })
             ->with(['user'])
             ->withCount(['items'])
             ->orderBy('created_at', 'desc')
             ->get()
             ->map(function (Quote $quote) use ($org) {
-                $quote->setAttribute('project_members_list', ProjectMember::with('user')
-                    ->where('quote_id', $quote->id)
+                $members = ProjectMember::with('user')
                     ->where('org_id', $org->id)
-                    ->where('is_active', true)
-                    ->get());
+                    ->where('is_active', true);
+
+                if ($quote->project_id !== null) {
+                    $members->where('project_id', $quote->project_id);
+                } else {
+                    $members->where('quote_id', $quote->id);
+                }
+
+                $quote->setAttribute('project_members_list', $members->get());
 
                 return $quote;
             });

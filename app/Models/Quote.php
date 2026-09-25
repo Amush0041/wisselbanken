@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -46,6 +47,17 @@ class Quote extends Model
     public function project()
     {
         return $this->belongsTo(Project::class);
+    }
+
+    public function scopeVisibleTo(Builder $query, int $userId, ?int $orgId, bool $members = true): Builder
+    {
+        return $query->where(function (Builder $q) use ($userId, $orgId, $members) {
+            $q->where('quotes.user_id', $userId);
+
+            if ($members && $orgId !== null) {
+                $q->orWhereIn('quotes.project_id', Project::visibleTo($userId, $orgId)->select('projects.id'));
+            }
+        });
     }
 
     public function savedList()

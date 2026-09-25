@@ -88,12 +88,12 @@ class PermissionServiceTest extends RbacTestCase
         $org = Organization::create(['name' => 'Acme', 'org_type' => 'subcontractor']);
         $this->assignRole($user, $org, 'estimator'); // F on estimate_management
 
-        $projectA = $this->makeProject($user->id);
-        $projectB = $this->makeProject($user->id);
+        $projectA = $this->makeProject($user->id, $org->id);
+        $projectB = $this->makeProject($user->id, $org->id);
 
-        // Member of A only.
+        // Member of A only (a projects.id, via project_members.project_id).
         DB::table('project_members')->insert([
-            'quote_id' => $projectA,
+            'project_id' => $projectA,
             'user_id' => $user->id,
             'org_id' => $org->id,
             'is_active' => true,
@@ -138,12 +138,13 @@ class PermissionServiceTest extends RbacTestCase
         ]);
     }
 
-    private function makeProject(int $userId): int
+    private function makeProject(int $userId, int $orgId): int
     {
-        return DB::table('quotes')->insertGetId([
-            'user_id' => $userId,
-            'quote_number' => 'Q-' . uniqid(),
-            'status' => 'draft',
+        return DB::table('projects')->insertGetId([
+            'org_id' => $orgId,
+            'name' => 'P-' . uniqid(),
+            'status' => 'active',
+            'created_by' => $userId,
             'created_at' => now(),
             'updated_at' => now(),
         ]);

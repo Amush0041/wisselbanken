@@ -39,7 +39,7 @@ class PermissionService
      * @param  int       $orgId            MANDATORY — the organization context of the action
      * @param  string    $permissionGroup  permission group slug, e.g. 'procurement'
      * @param  string    $requiredLevel    one of F/A/O/S/R
-     * @param  int|null  $projectId        optional — a Quote/Estimate id for project scoping
+     * @param  int|null  $projectId        optional — a projects.id; membership is project_members.project_id
      */
     public function checkPermission(
         int $userId,
@@ -74,7 +74,7 @@ class PermissionService
             return false;
         }
 
-        // 3. Project-level scoping: when a projectId (quote id) is supplied, the effective user
+        // 3. Project-level scoping: when a projectId (projects.id) is supplied, the effective user
         //    must additionally be an active member of that project.
         if ($projectId !== null && ! $this->isActiveProjectMember($effectiveUserId, $orgId, $projectId)) {
             return false;
@@ -124,10 +124,13 @@ class PermissionService
     private function isActiveProjectMember(int $userId, int $orgId, int $projectId): bool
     {
         return DB::table('project_members')
-            ->where('quote_id', $projectId)
-            ->where('user_id', $userId)
-            ->where('org_id', $orgId)
-            ->where('is_active', true)
+            ->join('projects', 'projects.id', '=', 'project_members.project_id')
+            ->where('project_members.project_id', $projectId)
+            ->where('project_members.user_id', $userId)
+            ->where('project_members.org_id', $orgId)
+            ->where('project_members.is_active', true)
+            ->where('projects.org_id', $orgId)
+            ->whereNull('projects.deleted_at')
             ->exists();
     }
 }

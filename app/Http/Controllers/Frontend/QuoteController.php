@@ -13,7 +13,9 @@ use App\Models\UserService;
 use App\Models\ProductVariationColor;
 use App\Models\Customer;
 use App\Services\PersistUserCatalogFromQuoteItemPayload;
+use App\Services\Rbac\PermissionService;
 use App\Support\QuotePdfPresenter;
+use App\Support\Rbac\CurrentOrg;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
@@ -50,7 +52,10 @@ class QuoteController extends Controller
             ], 401);
         }
         
-        $query = Quote::where('user_id', $userId)
+        $orgId = CurrentOrg::id($userId);
+        $members = $this->canReadTeamQuotes($userId, $orgId);
+
+        $query = Quote::visibleTo($userId, $orgId, $members)
             ->with(['savedList', 'customer', 'items'])
             ->orderBy('created_at', 'desc');
 
@@ -118,7 +123,7 @@ class QuoteController extends Controller
             }
         }
 
-        $totalAmount = Quote::where('user_id', $userId)->get()->sum(function($q) {
+        $totalAmount = Quote::visibleTo($userId, $orgId, $members)->get()->sum(function($q) {
             return $q->calculateTotal();
         });
 
@@ -134,14 +139,21 @@ class QuoteController extends Controller
         ]);
     }
 
+    private function canReadTeamQuotes(int $userId, ?int $orgId): bool
+    {
+        return $orgId !== null
+            && app(PermissionService::class)->checkPermission($userId, $orgId, 'estimate_management', 'R');
+    }
+
     /**
      * Get estimate details for right panel (AJAX)
      */
     public function getEstimateDetails($id)
     {
+        $orgId = CurrentOrg::id((int) Auth::id());
         $quote = Quote::with(['items.productVariationColor.productVariation.product', 'savedList', 'customer'])
+            ->visibleTo(Auth::id(), $orgId, $this->canReadTeamQuotes(Auth::id(), $orgId))
             ->where('id', $id)
-            ->where('user_id', Auth::id())
             ->firstOrFail();
 
         $items = $quote->items->map(function($item) {
@@ -193,7 +205,7 @@ class QuoteController extends Controller
                 'status' => $quote->status,
                 'notes' => $quote->notes,
                 'terms_and_conditions' => $quote->terms_and_conditions,
-                'staff_notes' => $quote->staff_notes,
+                'staff_notes' => (int) $quote->user_id === (int) Auth::id() ? $quote->staff_notes : null,
                 'currency' => $quote->currency ?? 'USD',
                 'shipping_cost' => $quote->shipping_cost !== null ? (string) $quote->shipping_cost : '0',
                 'order_discount_raw' => $quote->order_discount_raw,
@@ -870,18 +882,20 @@ class QuoteController extends Controller
      */
     public function generatePDF($id)
     {
+        $orgId = CurrentOrg::id((int) Auth::id());
         $quote = Quote::with(['items.productVariationColor.productVariation.product', 'customer'])
+            ->visibleTo(Auth::id(), $orgId, $this->canReadTeamQuotes(Auth::id(), $orgId))
             ->where('id', $id)
-            ->where('user_id', Auth::id())
             ->firstOrFail();
 
         $pdf = PDF::loadView('frontend.quotes.pdf-template', QuotePdfPresenter::present($quote));
         
-        // Save PDF
-        $pdfPath = 'quotes/' . $quote->quote_number . '.pdf';
-        Storage::disk('public')->put($pdfPath, $pdf->output());
-        
-        $quote->update(['pdf_path' => $pdfPath]);
+        if ((int) $quote->user_id === (int) Auth::id()) {
+            $pdfPath = 'quotes/' . $quote->quote_number . '.pdf';
+            Storage::disk('public')->put($pdfPath, $pdf->output());
+
+            $quote->update(['pdf_path' => $pdfPath]);
+        }
 
         return $pdf->download($quote->quote_number . '.pdf');
     }
@@ -891,9 +905,10 @@ class QuoteController extends Controller
      */
     public function previewPDF($id)
     {
+        $orgId = CurrentOrg::id((int) Auth::id());
         $quote = Quote::with(['items.productVariationColor.productVariation.product', 'customer'])
+            ->visibleTo(Auth::id(), $orgId, $this->canReadTeamQuotes(Auth::id(), $orgId))
             ->where('id', $id)
-            ->where('user_id', Auth::id())
             ->firstOrFail();
 
         $pdf = PDF::loadView('frontend.quotes.pdf-template', QuotePdfPresenter::present($quote));
