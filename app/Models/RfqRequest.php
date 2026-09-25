@@ -10,6 +10,7 @@ class RfqRequest extends Model
 {
     protected $fillable = [
         'org_id',
+        'project_id',
         'created_by',
         'title',
         'notes',
@@ -24,6 +25,11 @@ class RfqRequest extends Model
     public function organization(): BelongsTo
     {
         return $this->belongsTo(\App\Models\Rbac\Organization::class, 'org_id');
+    }
+
+    public function project(): BelongsTo
+    {
+        return $this->belongsTo(Project::class);
     }
 
     public function creator(): BelongsTo

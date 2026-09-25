@@ -51,6 +51,10 @@ class UserWorkspaceController extends Controller
         if ($orgId && $this->permissions->checkPermission($userId, $orgId, 'quote_rfq_management', 'S')) {
             $pendingRfqs = RfqRequest::where('org_id', $orgId)
                 ->where('status', 'open')
+                ->where(function ($q) use ($userId, $orgId) {
+                    $q->whereNull('project_id')
+                        ->orWhereIn('project_id', Project::visibleTo($userId, $orgId)->select('projects.id'));
+                })
                 ->orderByDesc('created_at')
                 ->limit(10)
                 ->get();

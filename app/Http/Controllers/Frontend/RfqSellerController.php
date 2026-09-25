@@ -8,6 +8,8 @@ use App\Models\RfqRequest;
 use App\Models\RfqResponse;
 use App\Models\Rbac\Organization;
 use App\Services\Rbac\OrgRelationshipService;
+use App\Services\Rbac\PermissionService;
+use App\Support\Rbac\CurrentOrg;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -19,13 +21,21 @@ use Illuminate\Support\Facades\Auth;
  */
 class RfqSellerController extends Controller
 {
-    public function __construct(private readonly OrgRelationshipService $orgRelationships) {}
+    public function __construct(
+        private readonly OrgRelationshipService $orgRelationships,
+        private readonly PermissionService $permissions,
+    ) {}
 
     public function incoming()
     {
         $orgId = $this->currentOrgId();
+        $this->requireLevel($orgId, 'R');
 
-        $recipients = RfqRecipient::with(['rfqRequest.creator', 'rfqRequest.organization'])
+        $recipients = RfqRecipient::with([
+            'rfqRequest' => fn ($q) => $q->select(['id', 'org_id', 'created_by', 'title', 'notes', 'deadline', 'status', 'created_at', 'updated_at']),
+            'rfqRequest.creator',
+            'rfqRequest.organization',
+        ])
             ->where('seller_org_id', $orgId)
             ->latest()
             ->get();
@@ -36,6 +46,7 @@ class RfqSellerController extends Controller
     public function respond(Request $request, RfqRequest $rfq)
     {
         $orgId = $this->currentOrgId();
+        $this->requireLevel($orgId, 'S');
 
         $recipient = RfqRecipient::where('rfq_request_id', $rfq->id)
             ->where('seller_org_id', $orgId)
@@ -80,6 +91,7 @@ class RfqSellerController extends Controller
     public function decline(RfqRequest $rfq)
     {
         $orgId = $this->currentOrgId();
+        $this->requireLevel($orgId, 'S');
 
         $recipient = RfqRecipient::where('rfq_request_id', $rfq->id)
             ->where('seller_org_id', $orgId)
@@ -93,6 +105,15 @@ class RfqSellerController extends Controller
 
     private function currentOrgId(): int
     {
-        return (int) session(config('rbac.current_org_session_key'));
+        return (int) CurrentOrg::id((int) Auth::id());
+    }
+
+    private function requireLevel(int $orgId, string $level): void
+    {
+        abort_unless(
+            $orgId > 0 && $this->permissions->checkPermission((int) Auth::id(), $orgId, 'quote_rfq_management', $level),
+            403,
+            'You do not have permission to perform this action.'
+        );
     }
 }

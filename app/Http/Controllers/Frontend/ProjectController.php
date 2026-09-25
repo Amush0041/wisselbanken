@@ -95,10 +95,14 @@ class ProjectController extends Controller
         $message = 'Delete or move the estimates in this project first.';
         $blocked = false;
 
-        DB::transaction(function () use ($project, $request, $message, &$blocked) {
+        DB::transaction(function () use ($project, $request, &$message, &$blocked) {
             $locked = Project::whereKey($project->id)->lockForUpdate()->firstOrFail();
 
-            if ($locked->quotes()->exists()) {
+            if ($locked->quotes()->exists() || $locked->rfqRequests()->exists()) {
+                if (! $locked->quotes()->exists()) {
+                    $message = 'Delete or move the RFQs in this project first.';
+                }
+
                 abort_if($request->expectsJson(), 422, $message);
                 $blocked = true;
 

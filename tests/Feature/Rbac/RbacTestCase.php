@@ -91,6 +91,8 @@ abstract class RbacTestCase extends TestCase
             '2026_09_24_000004_add_project_id_to_plan_crosswalk_table.php',
             '2026_09_24_000005_add_quote_id_to_rbac_audit_logs_table.php',
             '2026_09_24_000006_create_project_member_logs_table.php',
+            '2026_09_01_000003_create_rfq_tables.php',
+            '2026_09_26_000001_add_project_id_to_rfq_requests_table.php',
         ];
 
         foreach ($migrations as $file) {

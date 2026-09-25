@@ -44,6 +44,11 @@ class Project extends Model
         return $this->hasMany(Quote::class);
     }
 
+    public function rfqRequests(): HasMany
+    {
+        return $this->hasMany(RfqRequest::class);
+    }
+
     public function members(): HasMany
     {
         return $this->hasMany(ProjectMember::class);

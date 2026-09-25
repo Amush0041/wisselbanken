@@ -11,6 +11,7 @@
         <div>
             <h4 class="page-title mb-1">{{ $rfq->title }}</h4>
             <p class="page-description mb-0">
+                @if ($rfq->project)Project: <a href="{{ route('projects.show', $rfq->project->id) }}">{{ $rfq->project->name }}</a> &middot; @endif
                 RFQ #{{ $rfq->id }} &middot; Sent {{ $rfq->created_at->format('M d, Y') }}
                 @if ($rfq->deadline) &middot; Deadline: {{ $rfq->deadline->format('M d, Y') }} @endif
             </p>

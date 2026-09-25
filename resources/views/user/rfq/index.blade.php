@@ -48,6 +48,7 @@
                         <tr>
                             <th>#</th>
                             <th>Title</th>
+                            <th>Project</th>
                             <th>Suppliers</th>
                             <th>Responses</th>
                             <th>Deadline</th>
@@ -60,6 +61,7 @@
                         <tr>
                             <td>{{ $rfq->id }}</td>
                             <td>{{ $rfq->title }}</td>
+                            <td>@if ($rfq->project)<a href="{{ route('projects.show', $rfq->project->id) }}">{{ $rfq->project->name }}</a>@else — @endif</td>
                             <td>{{ $rfq->recipients->count() }}</td>
                             <td>{{ $rfq->responses->count() }}</td>
                             <td>{{ $rfq->deadline?->format('M d, Y') ?? '—' }}</td>

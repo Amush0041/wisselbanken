@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Schema;
 
 /**
  * Phase 3 fixture. Extends the RbacTestCase stubs with only the tables and columns the read paths
- * touch (quotes columns, customers, saved_lists, quote_items, products, rfq_*).
+ * touch (quotes columns, customers, saved_lists, quote_items, products); the rfq_* tables come from the real migrations in RbacTestCase.
  *
  * Ids are chosen so quotes.id and projects.id collide on purpose:
  *   projects: P1=1 (org A), P2=2 (org A), P3=3 (org B)
@@ -109,21 +109,6 @@ abstract class ProjectTestCase extends RbacTestCase
         Schema::create('products', function (Blueprint $t) {
             $t->id();
             $t->string('name')->nullable();
-            $t->timestamps();
-        });
-        Schema::create('rfq_requests', function (Blueprint $t) {
-            $t->id();
-            $t->unsignedBigInteger('org_id')->nullable();
-            $t->string('title')->nullable();
-            $t->string('status')->nullable();
-            $t->timestamp('deadline')->nullable();
-            $t->timestamps();
-        });
-        Schema::create('rfq_recipients', function (Blueprint $t) {
-            $t->id();
-            $t->unsignedBigInteger('rfq_request_id')->nullable();
-            $t->unsignedBigInteger('seller_org_id')->nullable();
-            $t->string('status')->nullable();
             $t->timestamps();
         });
     }

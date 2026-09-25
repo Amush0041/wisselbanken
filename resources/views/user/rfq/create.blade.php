@@ -18,6 +18,28 @@
                 @csrf
 
                 <div class="row g-3">
+                    {{-- Project --}}
+                    <div class="col-12">
+                        <label class="form-label fw-semibold">Project <span class="text-danger">*</span></label>
+                        @if ($projects->isEmpty())
+                            <div class="alert alert-warning mb-0">
+                                <strong>No projects available.</strong>
+                                An RFQ must belong to a project.
+                                <a href="{{ route('projects.index') }}" class="alert-link ms-1">Create a project &rarr;</a>
+                            </div>
+                        @else
+                            <select name="project_id" class="form-select @error('project_id') is-invalid @enderror">
+                                <option value="">Select a project…</option>
+                                @foreach ($projects as $project)
+                                    <option value="{{ $project->id }}" @selected((int) old('project_id', $selectedProjectId) === $project->id)>{{ $project->name }}</option>
+                                @endforeach
+                            </select>
+                            @error('project_id')
+                            <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        @endif
+                    </div>
+
                     {{-- Title --}}
                     <div class="col-12">
                         <label class="form-label fw-semibold">Title <span class="text-danger">*</span></label>
