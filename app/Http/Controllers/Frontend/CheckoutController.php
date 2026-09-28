@@ -283,9 +283,9 @@ class CheckoutController extends Controller
                 ->with('order_status', $initialStatus);
 
         } catch (\Exception $e) {
-            dd($e->getMessage());
             DB::rollBack();
-            return redirect()->back()->with('error', 'There was an error processing your order. Please try again.');
+            Log::error('Checkout failed: ' . $e->getMessage(), ['exception' => $e]);
+            return redirect()->back()->withInput()->with('error', 'There was an error processing your order. Please try again.');
         }
     }
 

@@ -456,6 +456,23 @@ class P2CleanupBCTest extends ProjectTestCase
         $this->assertSame('declined', DB::table('rfq_recipients')->value('status'));
     }
 
+    /**
+     * Verifier finding (2026-09-26): decline only checked the RFQ's own status ('converted'),
+     * so a seller who had already responded could still decline afterwards, leaving a
+     * 'declined' recipient whose response the buyer could still select or convert. Declining
+     * is now only valid while the recipient is still 'pending', same as responding.
+     */
+    #[DataProvider('modes')]
+    public function test_decline_after_already_responding_is_422_and_the_recipient_stays_responded(string $mode): void
+    {
+        $this->setMode($mode);
+        $rfq = $this->incomingRfq('sent', 'responded');
+
+        $this->actingAs($this->sellerRep)->postJson(route('rfq.seller.decline', $rfq))->assertStatus(422);
+
+        $this->assertSame('responded', DB::table('rfq_recipients')->value('status'));
+    }
+
     // ---- P2-C: no approver refusal ---------------------------------------------------------------
 
     private function validCheckout(): array

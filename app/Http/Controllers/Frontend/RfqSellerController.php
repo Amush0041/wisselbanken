@@ -12,6 +12,7 @@ use App\Services\Rbac\PermissionService;
 use App\Support\Rbac\CurrentOrg;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Seller-side RFQ actions (doc §6.6).
@@ -66,29 +67,41 @@ class RfqSellerController extends Controller
             abort_if($authError !== null, 403, $authError);
         }
 
-        abort_unless(
-            $rfq->status === 'sent' && $recipient->status === 'pending',
-            422,
-            'This RFQ is no longer open for responses, or you have already responded to it.'
-        );
-
         $request->validate([
             'total_price' => 'required|numeric|min:0',
             'valid_until' => 'nullable|date|after_or_equal:today',
             'notes'       => 'nullable|string|max:2000',
         ]);
 
-        RfqResponse::create([
-            'rfq_request_id' => $rfq->id,
-            'seller_org_id'  => $orgId,
-            'created_by'     => Auth::id(),
-            'total_price'    => $request->total_price,
-            'valid_until'    => $request->valid_until,
-            'notes'          => $request->notes,
-            'status'         => 'pending_review',
-        ]);
+        // Locked re-read: without the lock, two concurrent requests can both read
+        // 'sent'/'pending' before either writes, which would create two responses for one
+        // recipient, or race with the buyer closing/converting the RFQ. Everything that
+        // decides whether this response is allowed must happen inside the lock.
+        DB::transaction(function () use ($request, $rfq, $orgId) {
+            $lockedRfq = RfqRequest::whereKey($rfq->id)->lockForUpdate()->firstOrFail();
+            $lockedRecipient = RfqRecipient::where('rfq_request_id', $rfq->id)
+                ->where('seller_org_id', $orgId)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        $recipient->update(['status' => 'responded']);
+            abort_unless(
+                $lockedRfq->status === 'sent' && $lockedRecipient->status === 'pending',
+                422,
+                'This RFQ is no longer open for responses, or you have already responded to it.'
+            );
+
+            RfqResponse::create([
+                'rfq_request_id' => $rfq->id,
+                'seller_org_id'  => $orgId,
+                'created_by'     => Auth::id(),
+                'total_price'    => $request->total_price,
+                'valid_until'    => $request->valid_until,
+                'notes'          => $request->notes,
+                'status'         => 'pending_review',
+            ]);
+
+            $lockedRecipient->update(['status' => 'responded']);
+        });
 
         return redirect()->route('rfq.seller.incoming')
             ->with('success', 'Your quote has been submitted to the buyer.');
@@ -99,13 +112,18 @@ class RfqSellerController extends Controller
         $orgId = $this->currentOrgId();
         $this->requireLevel($orgId, 'S');
 
-        $recipient = RfqRecipient::where('rfq_request_id', $rfq->id)
-            ->where('seller_org_id', $orgId)
-            ->firstOrFail();
+        DB::transaction(function () use ($rfq, $orgId) {
+            $lockedRfq = RfqRequest::whereKey($rfq->id)->lockForUpdate()->firstOrFail();
+            $lockedRecipient = RfqRecipient::where('rfq_request_id', $rfq->id)
+                ->where('seller_org_id', $orgId)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        abort_if($rfq->status === 'converted', 422, 'This RFQ has already been converted to an order and can no longer be changed.');
+            abort_if($lockedRfq->status === 'converted', 422, 'This RFQ has already been converted to an order and can no longer be changed.');
+            abort_unless($lockedRecipient->status === 'pending', 422, 'You have already responded to this RFQ and cannot decline it now.');
 
-        $recipient->update(['status' => 'declined']);
+            $lockedRecipient->update(['status' => 'declined']);
+        });
 
         return redirect()->route('rfq.seller.incoming')
             ->with('success', 'You have declined this RFQ.');

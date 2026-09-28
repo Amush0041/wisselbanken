@@ -1,13 +1,26 @@
-# Wisselbanken — Handover (snapshot 2026-09-26)
+# Wisselbanken — Handover (snapshot 2026-09-27)
 
-> **P2 status (2026-09-26): implemented on `fix/p2-cleanup` (cut from `fix/rfq-project-scope-and-approval`), NOT committed yet — awaiting human approval.**
+> **P2 status (2026-09-27): implemented on `fix/p2-cleanup` (cut from `fix/rfq-project-scope-and-approval`), committed locally (`7021dd8` + one follow-up commit) — NOT pushed, human pushes.**
 > Done: P2-A (server-side level checks on every mapped route + all-routes guard test), P2-B (items 11, 12 already correct, 13, 15, 16),
 > P2-C (zero approvers refused), P2-D (ARCHITECTURE.md refreshed, HANDOVER-CLIENT.md, docs/WEEK12-QA-REPORT.md/.pdf, TESTING.md).
-> Suite 1012 passed / 4 failed (the known 4); views compile; mutations killed (one equivalent survivor); one Verifier: CONFIRM.
-> Open low-severity Verifier notes: `RfqSellerController::respond` not atomic (concurrent double respond); `decline` after a response leaves the
-> response selectable; `processCheckout` routing/`orders.org_id` read the raw session org key while the S check uses `CurrentOrg::id`;
-> stray `dd($e->getMessage())` in the `processCheckout` catch block (pre-existing); unmapped pallet routes have no auth. Accepted:
-> data-scoped reads and 404-before-403 on scoped writes (documented in `AuditFindingsRound2Test`). Section 10 below is the original work order.
+> Suite 1016 passed / 4 failed (the known 4); views compile; mutations killed (one equivalent survivor); one Verifier: CONFIRM.
+>
+> **2026-09-27 follow-up (client doc "WB RBAC — Unblock the Audit", item 5, plus 3 Verifier notes fixed on the same branch):**
+> - `RbacAudit::friendlyMessage()` now takes the denial `reason`. A project-scoped denial where the user's org-level role
+>   already grants the required level, but they just aren't on the project, now shows "You are not a member of this
+>   project..." instead of the generic "you don't have permission" text (matches what the audit log already recorded as
+>   `no_grant_or_not_project_member`). `no_org` and `project_unresolved` also got clearer text while in there.
+> - `RfqSellerController::respond` now locks the RFQ and recipient rows and re-checks status inside the transaction
+>   before creating a response (was: plain read then write, racy).
+> - `RfqSellerController::decline` now also requires the recipient to still be `pending` (was: only blocked on RFQ
+>   `converted`, so a seller who'd already responded could still decline, leaving the response selectable).
+> - Removed the stray `dd($e->getMessage())` in `CheckoutController::processCheckout`'s catch block (dumped the raw
+>   exception to the customer and skipped `DB::rollBack()` regardless of `APP_DEBUG`); now logs via `Log::error` and
+>   rolls back before redirecting.
+> - Still open, not touched: `processCheckout` reads the session org for routing/`orders.org_id` while the S check
+>   uses `CurrentOrg::id` (Verifier note, low severity); unmapped pallet routes have no auth (pre-existing, out of scope).
+>
+> Accepted: data-scoped reads and 404-before-403 on scoped writes (documented in `AuditFindingsRound2Test`). Section 10 below is the original work order.
 
 Purpose: everything needed to resume in a new chat without re-deriving anything. Read this, then `CLAUDE.md`,
 then the last "Status" line of `.claude/tasks/projects-entity/PROGRESS.md`. Do NOT read the whole

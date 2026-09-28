@@ -166,7 +166,7 @@ class RbacAudit
         ]);
 
         if ($enforcing) {
-            $message = $this->friendlyMessage($group, $level);
+            $message = $this->friendlyMessage($group, $level, $reason, $request->user()->id, $orgId, $projectId);
 
             // AJAX / JSON requests → JSON payload so the client can show a popup.
             if ($request->expectsJson() || $request->ajax()) {
@@ -256,9 +256,41 @@ class RbacAudit
     }
 
     /**
-     * Convert a technical group + level pair into a human-readable denial message.
+     * Convert a technical group + level pair into a human-readable denial message. A route
+     * that is project-scoped can fail for two different reasons that look identical to the
+     * user unless we tell them apart: the org-level role itself doesn't grant the required
+     * level, or the role would grant it but the user just isn't a member of this project
+     * (client audit finding "non-member modal text", 2026-09-26). Only the second case gets
+     * the membership-specific message.
      */
-    private function friendlyMessage(string $group, string $level): string
+    private function friendlyMessage(
+        string $group,
+        string $level,
+        string $reason,
+        ?int $userId,
+        ?int $orgId,
+        ?int $projectId,
+    ): string {
+        if ($reason === 'no_org') {
+            return 'You need an active organization to do this. Select or join an organization and try again.';
+        }
+
+        if ($reason === 'project_unresolved') {
+            return "This project couldn't be found, or it's no longer available.";
+        }
+
+        if ($reason === 'no_grant_or_not_project_member'
+            && $projectId !== null
+            && $userId !== null
+            && $orgId !== null
+            && $this->permissions->checkPermission($userId, $orgId, $group, $level)) {
+            return 'You are not a member of this project. Ask an organization owner or project manager to add you before you can continue.';
+        }
+
+        return $this->genericMessage($group, $level);
+    }
+
+    private function genericMessage(string $group, string $level): string
     {
         $groupLabels = [
             'estimate_management'          => 'Estimates',

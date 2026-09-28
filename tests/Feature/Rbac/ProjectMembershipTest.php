@@ -212,6 +212,43 @@ class ProjectMembershipTest extends ProjectTestCase
         $this->assertSame('blocked', $this->lastRow()->outcome);
     }
 
+    /**
+     * Client audit ("non-member modal text", 2026-09-26): a user whose org-level role already
+     * grants the required level, but who just isn't on this project, must read a
+     * membership-specific message — not the generic "you don't have permission" text.
+     */
+    public function test_a2_non_member_with_adequate_org_grant_sees_membership_message(): void
+    {
+        $this->setMode('enforce');
+
+        $r = $this->actingAs($this->stranger)->from('/previous')->get("probe/q/{$this->q1}");
+        $this->assertSame(
+            'You are not a member of this project. Ask an organization owner or project manager to add you before you can continue.',
+            $r->getSession()->get('rbac_denied')
+        );
+
+        $json = $this->actingAs($this->stranger)->getJson("probe/q/{$this->q1}");
+        $json->assertForbidden()->assertJsonFragment(['message' => 'You are not a member of this project. Ask an organization owner or project manager to add you before you can continue.']);
+    }
+
+    /**
+     * A user with no adequate org-level grant at all still gets the generic message — the
+     * membership-specific text would be misleading (adding them to the project wouldn't help).
+     */
+    public function test_a2_non_member_without_org_grant_sees_the_generic_message(): void
+    {
+        $this->setMode('enforce');
+
+        $noGrantUser = $this->mkUser($this->orgA, 'manufacturer_admin');
+
+        $r = $this->actingAs($noGrantUser)->from('/previous')->get("probe/q/{$this->q1}");
+        $this->assertNotSame(
+            'You are not a member of this project. Ask an organization owner or project manager to add you before you can continue.',
+            $r->getSession()->get('rbac_denied')
+        );
+        $this->assertStringContainsString("don't have permission", $r->getSession()->get('rbac_denied'));
+    }
+
     #[DataProvider('modes')]
     public function test_a3_null_project_quote_is_unresolved_and_never_reaches_check_permission(string $mode): void
     {
