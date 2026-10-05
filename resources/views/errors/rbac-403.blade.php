@@ -95,11 +95,15 @@
                 This section requires the <code>{{ $permissionGroup }}</code> permission at level <code>{{ $requiredLevel }}</code>.
                 Your current credentials do not grant access.
             </p>
+        @elseif (!empty($message))
+            <p>{{ $message }}</p>
         @else
             <p>
                 This section is restricted. Your current credentials do not grant visibility into this area.
             </p>
         @endif
+
+        <p>Contact your organization administrator if you need access.</p>
 
         @if (!empty($adminName))
             <div class="notif">
@@ -112,6 +116,7 @@
         @endif
 
         <a href="javascript:history.back()" class="btn-secondary-wb">Go back</a>
+        <a href="{{ url('/user-dashboard') }}" class="btn-primary-wb" style="margin-top:.75rem">Back to my workspace</a>
 
         <span class="footer-badge">
             <i class="ti ti-shield-lock"></i> ACCESS RESTRICTED

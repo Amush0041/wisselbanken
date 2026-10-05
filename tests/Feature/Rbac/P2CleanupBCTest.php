@@ -597,8 +597,43 @@ class P2CleanupBCTest extends ProjectTestCase
         $r = $this->actingAs($this->viewer)->withSession($this->orgSession($this->orgA->id))
             ->from('/checkout')->post(route('checkout.process'), []);
 
-        $r->assertStatus(403);
+        $r->assertRedirect('/checkout')->assertSessionHas('rbac_denied');
         $r->assertSessionHasNoErrors();
+    }
+
+    public function test_a_denied_page_in_audit_mode_shows_the_popup_flash_a_friendly_page_or_json(): void
+    {
+        $this->setMode('audit');
+        $as = fn () => $this->actingAs($this->viewer)->withSession($this->orgSession($this->orgA->id));
+        $msg = 'You do not have permission to perform this action.';
+
+        $as()->from('/user-dashboard')->get(route('org-admin.audit-log'))
+            ->assertRedirect('/user-dashboard')->assertSessionHas('rbac_denied', $msg);
+
+        $as()->getJson(route('org-admin.audit-log'))
+            ->assertForbidden()->assertJson(['rbac_error' => true, 'message' => $msg]);
+    }
+
+    public function test_a_denied_page_opened_directly_shows_a_friendly_access_restricted_page(): void
+    {
+        $this->setMode('audit');
+        $msg = 'You do not have permission to perform this action.';
+
+        $this->actingAs($this->viewer)->withSession($this->orgSession($this->orgA->id))
+            ->get(route('org-admin.audit-log'))
+            ->assertForbidden()->assertSee('Access Restricted', false)->assertSee($msg, false)
+            ->assertSee('Contact your organization administrator', false);
+    }
+
+    public function test_a_denied_page_in_enforce_mode_redirects_back_with_the_popup_flash(): void
+    {
+        $this->setMode('enforce');
+        $as = fn () => $this->actingAs($this->viewer)->withSession($this->orgSession($this->orgA->id));
+
+        $as()->from('/user-dashboard')->get(route('org-admin.audit-log'))
+            ->assertRedirect('/user-dashboard')->assertSessionHas('rbac_denied');
+
+        $as()->getJson(route('org-admin.audit-log'))->assertForbidden()->assertJson(['rbac_error' => true]);
     }
 
     #[DataProvider('modes')]
