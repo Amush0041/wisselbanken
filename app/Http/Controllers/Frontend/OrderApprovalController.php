@@ -18,7 +18,7 @@ class OrderApprovalController extends Controller
     public function index()
     {
         $this->requireOrgLevel('approval_authority', 'A');
-        $orgId = session(config('rbac.current_org_session_key'));
+        $orgId = CurrentOrg::sessionOrg((int) Auth::id());
 
         $pendingOrders = Order::with(['user', 'items'])
             ->where('org_id', $orgId)
@@ -65,7 +65,7 @@ class OrderApprovalController extends Controller
 
     private function authorizeApprovalAction(Order $order): void
     {
-        $orgId = session(config('rbac.current_org_session_key'));
+        $orgId = CurrentOrg::sessionOrg((int) Auth::id());
 
         abort_if(
             (int) $order->org_id !== (int) $orgId || $order->status !== 'pending_approval',

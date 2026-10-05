@@ -14,11 +14,38 @@
         <span class="fw-semibold small">{{ Auth::user()->name }}</span>
     </div>
 
+    @if (!empty($navUniversalAdmin))
+    <span class="badge bg-danger ms-3">Platform admin mode - {{ $navCurrentOrg?->name ?? 'no organization selected' }}</span>
+    @endif
+
     {{-- Right: org switcher + user dropdown --}}
     <ul class="navbar-nav flex-row align-items-center ms-auto gap-2">
 
+        @if (!empty($navUniversalAdmin))
+        <li class="nav-item">
+            <form action="{{ route('org.switch') }}" method="POST" class="d-flex align-items-center gap-2" id="platformOrgSwitchForm">
+                @csrf
+                <select name="org_id" id="platformOrgSelect" class="form-select form-select-sm" style="min-width:240px" onchange="this.form.submit()">
+                    <option value="" disabled @selected(!$navCurrentOrg)>Select organization</option>
+                    @foreach ($navUserOrgs as $org)
+                        <option value="{{ $org->id }}" @selected($org->id === ($navCurrentOrg?->id))>{{ $org->name }} (#{{ $org->id }})</option>
+                    @endforeach
+                </select>
+            </form>
+            <script>
+                document.addEventListener('DOMContentLoaded', function () {
+                    if (window.jQuery && jQuery.fn.select2) {
+                        jQuery('#platformOrgSelect').select2({ width: '260px' }).on('select2:select', function () {
+                            document.getElementById('platformOrgSwitchForm').submit();
+                        });
+                    }
+                });
+            </script>
+        </li>
+        @endif
+
         {{-- Org Switcher --}}
-        @if (!empty($navUserOrgs) && $navUserOrgs->count() > 1)
+        @if (empty($navUniversalAdmin) && !empty($navUserOrgs) && $navUserOrgs->count() > 1)
         <li class="nav-item dropdown">
             <a class="nav-link dropdown-toggle d-flex align-items-center gap-2 px-2 py-1 rounded"
                href="javascript:void(0);" data-bs-toggle="dropdown"

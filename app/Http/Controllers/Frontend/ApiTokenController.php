@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Frontend;
 use App\Http\Controllers\Controller;
 use App\Models\Rbac\ApiToken;
 use App\Models\Rbac\Organization;
+use App\Support\Rbac\CurrentOrg;
 use App\Models\Rbac\UserOrgRole;
 use App\Services\Rbac\PermissionService;
 use App\Services\Rbac\ServiceAccountService;
@@ -86,17 +87,8 @@ class ApiTokenController extends Controller
 
     private function currentOrg(): ?Organization
     {
-        $sessionKey = config('rbac.current_org_session_key');
-        $orgId = session($sessionKey);
+        $id = CurrentOrg::id((int) Auth::id());
 
-        $query = UserOrgRole::where('user_id', Auth::id())->where('is_active', true);
-
-        if ($orgId && (clone $query)->where('org_id', $orgId)->exists()) {
-            return Organization::find($orgId);
-        }
-
-        $firstOrgId = $query->value('org_id');
-
-        return $firstOrgId ? Organization::find($firstOrgId) : null;
+        return $id ? Organization::find($id) : null;
     }
 }

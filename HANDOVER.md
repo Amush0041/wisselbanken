@@ -1,5 +1,7 @@
 # Wisselbanken — Handover (snapshot 2026-09-27)
 
+> **Universal admin (2026-10-05, uncommitted on `release/1.0-prod`):** env-listed platform admins bypass RBAC with full audit logging; see ARCHITECTURE.md 10b and HANDOVER-CLIENT.md 11b. Suite 1150 passed / 4 failed (the known 4).
+>
 > **P2 status (2026-09-27): implemented on `fix/p2-cleanup` (cut from `fix/rfq-project-scope-and-approval`), committed locally (`7021dd8` + one follow-up commit) — NOT pushed, human pushes.**
 > Done: P2-A (server-side level checks on every mapped route + all-routes guard test), P2-B (items 11, 12 already correct, 13, 15, 16),
 > P2-C (zero approvers refused), P2-D (ARCHITECTURE.md refreshed, HANDOVER-CLIENT.md, docs/WEEK12-QA-REPORT.md/.pdf, TESTING.md).

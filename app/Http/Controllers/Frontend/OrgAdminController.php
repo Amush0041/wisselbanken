@@ -15,6 +15,7 @@ use App\Models\Rbac\ProjectMemberLog;
 use App\Models\Rbac\AuditLog as RbacAuditLog;
 use App\Models\Rbac\RoleAssignmentLog;
 use App\Models\Rbac\Organization;
+use App\Support\Rbac\CurrentOrg;
 use App\Models\Rbac\PermissionGroup;
 use App\Models\Rbac\Role;
 use App\Models\Rbac\RolePermission;
@@ -674,17 +675,8 @@ class OrgAdminController extends Controller
 
     private function currentOrg(): ?Organization
     {
-        $sessionKey = config('rbac.current_org_session_key');
-        $orgId = session($sessionKey);
+        $id = CurrentOrg::id((int) Auth::id());
 
-        $query = UserOrgRole::where('user_id', Auth::id())->where('is_active', true);
-
-        if ($orgId && (clone $query)->where('org_id', $orgId)->exists()) {
-            return Organization::find($orgId);
-        }
-
-        $firstOrgId = $query->value('org_id');
-
-        return $firstOrgId ? Organization::find($firstOrgId) : null;
+        return $id ? Organization::find($id) : null;
     }
 }

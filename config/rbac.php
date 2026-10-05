@@ -36,6 +36,22 @@ return [
     */
     'current_org_session_key' => 'rbac_current_org_id',
 
+    /*
+    |--------------------------------------------------------------------------
+    | Universal (platform) admins
+    |--------------------------------------------------------------------------
+    | Comma-separated users.id values that may act in any organization and project.
+    | Empty = feature off. Env-only on purpose: no screen can grant it. Accounts must
+    | also have a verified email. Change requires config:clear / deploy.
+    */
+    'universal_admin_user_ids' => array_values(array_filter(
+        array_map('intval', array_filter(
+            array_map('trim', explode(',', (string) env('UNIVERSAL_ADMIN_USER_IDS', ''))),
+            'ctype_digit'
+        )),
+        fn ($id) => $id > 0
+    )),
+
     'phase5_backup_confirmed' => filter_var(env('PHASE5_BACKUP_CONFIRMED', false), FILTER_VALIDATE_BOOLEAN),
 
     /*

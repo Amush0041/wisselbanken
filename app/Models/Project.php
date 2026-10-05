@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Models\Rbac\Organization;
 use App\Models\Rbac\ProjectMember;
+use App\Support\Rbac\UniversalAdmin;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -61,6 +62,10 @@ class Project extends Model
 
     public function scopeVisibleTo(Builder $query, int $userId, int $orgId): Builder
     {
+        if (UniversalAdmin::is($userId)) {
+            return $query->where('projects.org_id', $orgId);
+        }
+
         return $query->where('projects.org_id', $orgId)->whereExists(function ($sub) use ($userId, $orgId) {
             $sub->selectRaw('1')
                 ->from('project_members')

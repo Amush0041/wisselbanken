@@ -48,6 +48,7 @@ done, current state, decisions, open tasks). Latest branch:
 - RFQs belong to a project (`rfq_requests.project_id`, nullable for legacy rows);
   converting an RFQ to an order needs `quote_rfq_management` F and `procurement` S
   and follows `ApprovalRoutingService`. Sellers must never see the buyer's project.
+- Universal admin: user ids in `.env` `UNIVERSAL_ADMIN_USER_IDS` (verified email required) bypass `checkPermission`, project visibility, org switching and `CheckRole` for `/admin`; each bypass is logged (`rbac_audit_logs` outcome `allowed_universal_admin` plus `universal-admin` log). Owner-only actions stay. Non-listed users are unchanged. See ARCHITECTURE.md 10b.
 - Known bug: `OrgRelationshipService::sellerAuthorizationError()` checks org
   type `=== 'rep_agency'`, but the real slug is `manufacturer_s_rep_sales_agency`.
   That branch is dead code — don't assume rep-agency seller authorization is

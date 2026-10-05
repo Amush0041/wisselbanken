@@ -5,6 +5,8 @@ namespace App\Providers;
 use App\Auth\ApiTokenGuard;
 use App\Services\Rbac\PermissionService;
 use App\Services\Rbac\ServiceAccountService;
+use App\Support\Rbac\CurrentOrg;
+use App\Support\Rbac\UniversalAdmin;
 use App\Models\Rbac\Organization;
 use App\Models\Rbac\UserOrgRole;
 use Illuminate\Contracts\Foundation\Application;
@@ -32,6 +34,18 @@ class AppServiceProvider extends ServiceProvider
             }
 
             $userId = Auth::id();
+
+            if (UniversalAdmin::is((int) $userId)) {
+                $navUserOrgs = Organization::orderBy('name')->get(['id', 'name', 'org_type']);
+                $currentId = CurrentOrg::id((int) $userId);
+                $navCurrentOrg = $currentId ? $navUserOrgs->firstWhere('id', $currentId) : null;
+                $navUniversalAdmin = true;
+
+                $view->with(compact('navUserOrgs', 'navCurrentOrg', 'navUniversalAdmin'));
+
+                return;
+            }
+
             $orgIds = UserOrgRole::where('user_id', $userId)
                 ->where('is_active', true)
                 ->pluck('org_id')
@@ -58,7 +72,7 @@ class AppServiceProvider extends ServiceProvider
             if (auth()->user()->role === 'admin') {
                 return true;
             }
-            $orgId = session(config('rbac.current_org_session_key'));
+            $orgId = CurrentOrg::sessionOrg((int) auth()->id());
             if (! $orgId) {
                 return false;
             }
@@ -78,7 +92,7 @@ class AppServiceProvider extends ServiceProvider
             if (auth()->user()->role === 'admin') {
                 return false;
             }
-            $orgId = session(config('rbac.current_org_session_key'));
+            $orgId = CurrentOrg::sessionOrg((int) auth()->id());
             if (! $orgId) {
                 return true;
             }

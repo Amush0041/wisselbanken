@@ -307,6 +307,14 @@ after the real run: it must report nothing left to do.
   (section 8) before or with any release that contains 5a; do not run 5b in the
   same release.
 
+## 10b. Universal admin (platform admin bypass)
+
+- **Identity**: user ids in env `UNIVERSAL_ADMIN_USER_IDS` (comma list, read into `config('rbac.universal_admin_user_ids')`), and the user must have a verified email. `App\Support\Rbac\UniversalAdmin::is()` is the only check.
+- **Where the bypass lives**: `PermissionService::checkPermission` and `Project::scopeVisibleTo` (permission and project visibility), `CurrentOrg` / session org resolution, `OrgSwitchController` (a listed user may switch into any org), and `CheckRole`, which admits listed ids to the `/admin` panel.
+- **Audit**: every bypass writes an `rbac_audit_logs` row with outcome `allowed_universal_admin` (deduplicated per request) and a line in the never-pruned `universal-admin-*.log` channel. A failure of either write is caught and falls back to `Log::error`; the bypass decision stays true.
+- **Unchanged**: owner-only actions (delete org, transfer ownership) stay owner-only; a listed user is not in any approver pool; delegation is not transitive; users not on the list behave exactly as before.
+- **Deviation**: this departs from plan section 3.4 (no role outside `user_org_roles`) and needs the client's written acknowledgement.
+
 ## 11. Known dead code
 
 `OrgRelationshipService::sellerAuthorizationError()` tests

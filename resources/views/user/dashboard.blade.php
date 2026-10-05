@@ -15,7 +15,7 @@
         $lists = \App\Models\SavedList::where('user_id', $userId);
 
         // Prefer controller-injected vars; fall back to inline computation for Route::view() compatibility.
-        $_dashOrgId = $orgId ?? session(config('rbac.current_org_session_key'));
+        $_dashOrgId = $orgId ?? \App\Support\Rbac\CurrentOrg::sessionOrg((int) auth()->id());
         $_dashUser  = auth()->user();
         $_dashAdmin = $_dashUser && $_dashUser->role === 'admin';
         $perm = app(PermissionService::class);
@@ -68,6 +68,10 @@
             'labels' => ['Draft', 'Sent', 'Completed'],
         ];
     @endphp
+
+    @if (!$_dashOrgId && \App\Support\Rbac\UniversalAdmin::is((int) auth()->id()))
+        <div class="alert alert-warning">Platform admin mode: select an organization from the picker in the top bar to start working in it.</div>
+    @endif
 
     {{-- §6.5 User Workspace: My Projects (permission-filtered by project_members) --}}
     @if (!empty($myProjects) && $myProjects->isNotEmpty())

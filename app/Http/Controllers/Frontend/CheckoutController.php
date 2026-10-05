@@ -207,7 +207,7 @@ class CheckoutController extends Controller
             // Solo operators auto-approve; multi-approver orgs route to the pool.
             $initialStatus = 'pending';
             if (Auth::check()) {
-                $orgId = session(config('rbac.current_org_session_key'));
+                $orgId = CurrentOrg::sessionOrg((int) Auth::id());
                 if ($orgId) {
                     $routing = app(ApprovalRoutingService::class)->route((int) $orgId, Auth::id());
                     if (! $routing['auto_approve'] && empty($routing['approver_ids'])) {
@@ -225,7 +225,7 @@ class CheckoutController extends Controller
             // Create order with calculated values
             $order = Order::create([
                 'user_id' => Auth::id() ?? null,
-                'org_id' => Auth::check() ? (session(config('rbac.current_org_session_key')) ?: null) : null,
+                'org_id' => Auth::check() ? (CurrentOrg::sessionOrg((int) Auth::id()) ?: null) : null,
                 'order_number' => 'ORD-' . strtoupper(uniqid()),
                 'name' => $request->name,
                 'project_title' => $request->project_name,

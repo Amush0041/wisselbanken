@@ -212,6 +212,8 @@
                                     <span class="badge bg-label-danger me-1">Blocked</span>
                                 @elseif ($isWouldBlock)
                                     <span class="badge bg-label-warning me-1">Would Block</span>
+                                @elseif ($log->outcome === 'allowed_universal_admin')
+                                    <span class="badge bg-label-info me-1">Platform admin</span>
                                 @else
                                     <span class="badge bg-label-secondary me-1">Logged</span>
                                 @endif

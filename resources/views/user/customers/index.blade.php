@@ -7,7 +7,7 @@
 @section('content')
 @php
 use App\Services\Rbac\PermissionService;
-$_cOrgId = session(config('rbac.current_org_session_key'));
+$_cOrgId = \App\Support\Rbac\CurrentOrg::sessionOrg((int) auth()->id());
 $_cUser  = auth()->user();
 $_cAdm   = $_cUser && $_cUser->role === 'admin';
 $_cp     = fn(string $g, string $l) => $_cUser && ($_cAdm || ($_cOrgId && app(PermissionService::class)->checkPermission($_cUser->id, (int) $_cOrgId, $g, $l)));

@@ -603,6 +603,53 @@ class AuditFindingsRound2Test extends ProjectTestCase
         $this->assertGreaterThan(100, $covered);
     }
 
+    public function test_guard_the_actors_of_these_guards_are_not_universal_admins_and_the_list_is_empty_by_default(): void
+    {
+        $this->assertSame([], config('rbac.universal_admin_user_ids'), 'tests must start with the feature off');
+        foreach ([$this->viewer, $this->mkUser($this->orgA, 'inventory_manager'), $this->est, $this->stranger] as $u) {
+            $this->assertFalse(\App\Support\Rbac\UniversalAdmin::is($u));
+        }
+    }
+
+    /**
+     * A listed, verified universal admin passes every mapped route (not denied) in both modes, apart from the
+     * routes the plan deliberately keeps owner-only. Anything else answering 403 means a mapped route is not
+     * reached by the central bypass (a controller that checks a role directly, for instance).
+     */
+    #[DataProvider('modes')]
+    public function test_guard_a_listed_universal_admin_is_not_denied_on_any_mapped_route(string $mode): void
+    {
+        $this->setMode($mode);
+        $ua = $this->mkUser();
+        config(['rbac.universal_admin_user_ids' => [$ua->id]]);
+        $fixtures = $this->mappedFixtures($this->viewer);
+        // Owner-only by design (isOwner), and "only the creator revokes their own delegation / token" (from_user_id / user_id check).
+        $ownerOnly = ['DELETE org-admin/settings/delete', 'POST org-admin/settings/transfer', 'DELETE org-admin/delegations/{delegation}', 'DELETE org-admin/api-tokens/{apiToken}'];
+        $checked = 0;
+        $denied = [];
+
+        foreach ($this->mappedRoutes() as $key => $e) {
+            if ($e['route'] === null || $this->isPlatformAdminRoute($e) || ! method_exists($e['route']->getControllerClass() ?? '', $e['route']->getActionMethod())) {
+                continue;
+            }
+
+            // {id} on quotes/* must be a quote with a project: a NULL-project quote fails closed as project_unresolved for everyone.
+            $uriFixtures = str_starts_with($e['uri'], 'quotes/') ? ['id' => $this->q1] + $fixtures : $fixtures;
+            $r = $this->req2($ua, $e['method'], $this->mappedUri($e['uri'], $uriFixtures), [], $this->orgA->id);
+            $checked++;
+            if (in_array($key, $ownerOnly, true)) {
+                $this->assertSame(403, $r->getStatusCode(), "$key stays owner-only for a universal admin ($mode)");
+                continue;
+            }
+            if ($r->getStatusCode() === 403) {
+                $denied[] = $key;
+            }
+        }
+
+        $this->assertSame([], $denied, "mapped routes that denied a listed universal admin ($mode)");
+        $this->assertGreaterThan(100, $checked);
+    }
+
     public function test_guard_mapped_platform_admin_routes_sit_behind_check_role_admin(): void
     {
         $unguarded = [];

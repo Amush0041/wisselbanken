@@ -6,6 +6,7 @@ use App\Models\Quote;
 use App\Models\Rbac\AuditLog;
 use App\Models\Rbac\RbacSetting;
 use App\Services\Rbac\PermissionService;
+use App\Support\Rbac\CurrentOrg;
 use Closure;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
@@ -231,28 +232,7 @@ class RbacAudit
      */
     private function currentOrgId(Request $request, int $userId): ?int
     {
-        $sessionKey = config('rbac.current_org_session_key');
-        $selected = $request->hasSession() ? $request->session()->get($sessionKey) : null;
-
-        if ($selected !== null && $this->userBelongsToOrg($userId, (int) $selected)) {
-            return (int) $selected;
-        }
-
-        $first = DB::table('user_org_roles')
-            ->where('user_id', $userId)
-            ->where('is_active', true)
-            ->value('org_id');
-
-        return $first !== null ? (int) $first : null;
-    }
-
-    private function userBelongsToOrg(int $userId, int $orgId): bool
-    {
-        return DB::table('user_org_roles')
-            ->where('user_id', $userId)
-            ->where('org_id', $orgId)
-            ->where('is_active', true)
-            ->exists();
+        return CurrentOrg::id($userId);
     }
 
     /**

@@ -6,7 +6,7 @@
 
 @php
 use App\Services\Rbac\PermissionService;
-$_pOrgId = session(config('rbac.current_org_session_key'));
+$_pOrgId = \App\Support\Rbac\CurrentOrg::sessionOrg((int) auth()->id());
 $_pUser  = auth()->user();
 $_pAdm   = $_pUser && $_pUser->role === 'admin';
 $_pc     = fn(string $l) => $_pUser && ($_pAdm || ($_pOrgId && app(PermissionService::class)->checkPermission($_pUser->id, (int) $_pOrgId, 'product_management', $l)));

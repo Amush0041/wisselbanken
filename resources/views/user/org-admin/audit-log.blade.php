@@ -248,7 +248,11 @@
                                     <span class="badge bg-label-secondary ms-1" style="font-size:.65rem">Level: {{ $entry->required_level }}</span>
                                 </td>
                                 <td class="py-3">
-                                    <span class="badge bg-label-danger" style="font-size:.65rem">Would Block</span>
+                                    @if ($entry->outcome === 'allowed_universal_admin')
+                                        <span class="badge bg-label-info" style="font-size:.65rem">Platform admin</span>
+                                    @else
+                                        <span class="badge bg-label-danger" style="font-size:.65rem">Would Block</span>
+                                    @endif
                                 </td>
                             </tr>
                         @empty

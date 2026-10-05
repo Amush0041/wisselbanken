@@ -73,6 +73,14 @@ return [
             'replace_placeholders' => true,
         ],
 
+        'universal_admin' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/universal-admin.log'),
+            'level' => 'info',
+            'days' => 0,
+            'permission' => 0664,
+        ],
+
         'slack' => [
             'driver' => 'slack',
             'url' => env('LOG_SLACK_WEBHOOK_URL'),

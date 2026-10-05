@@ -342,7 +342,7 @@
         assignUrl: "{{ route('org-admin.roles.assign') }}",
         peelOffUrl: "{{ route('org-admin.peel-off') }}",
         csrf: "{{ csrf_token() }}",
-        canManageRoles: {{ (auth()->user() && (auth()->user()->role === 'admin' || (session(config('rbac.current_org_session_key')) && app(\App\Services\Rbac\PermissionService::class)->checkPermission(auth()->id(), (int) session(config('rbac.current_org_session_key')), 'user_management', 'F')))) ? 'true' : 'false' }},
+        canManageRoles: {{ (auth()->user() && (auth()->user()->role === 'admin' || (\App\Support\Rbac\CurrentOrg::sessionOrg((int) auth()->id()) && app(\App\Services\Rbac\PermissionService::class)->checkPermission(auth()->id(), (int) \App\Support\Rbac\CurrentOrg::sessionOrg((int) auth()->id()), 'user_management', 'F')))) ? 'true' : 'false' }},
     };
 
     // ── Member data (pre-built from Blade) ──────────────────────────────────

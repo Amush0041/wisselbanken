@@ -2,7 +2,7 @@
 use App\Services\Rbac\PermissionService;
 $_sUser    = auth()->user();
 $_sAdmin   = $_sUser && $_sUser->role === 'admin';
-$_sOrgId   = session(config('rbac.current_org_session_key'));
+$_sOrgId   = \App\Support\Rbac\CurrentOrg::sessionOrg((int) auth()->id());
 $_sc       = fn(string $g, string $l) => $_sUser && ($_sAdmin || ($_sOrgId && app(PermissionService::class)->checkPermission($_sUser->id, (int) $_sOrgId, $g, $l)));
 @endphp
 

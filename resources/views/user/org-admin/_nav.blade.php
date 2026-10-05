@@ -2,7 +2,7 @@
 use App\Services\Rbac\PermissionService;
 $_navUser  = auth()->user();
 $_navAdmin = $_navUser && $_navUser->role === 'admin';
-$_navOrgId = session(config('rbac.current_org_session_key'));
+$_navOrgId = \App\Support\Rbac\CurrentOrg::sessionOrg((int) auth()->id());
 $_navCan   = fn(string $g, string $l) => $_navUser && ($_navAdmin || ($_navOrgId && app(PermissionService::class)->checkPermission($_navUser->id, (int) $_navOrgId, $g, $l)));
 @endphp
 

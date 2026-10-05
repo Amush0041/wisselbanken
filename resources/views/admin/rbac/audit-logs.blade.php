@@ -29,6 +29,7 @@
                         <option value="">All Events</option>
                         <option value="would_block" @selected(request('outcome')==='would_block')>Would Block (audit mode)</option>
                         <option value="blocked" @selected(request('outcome')==='blocked')>Blocked (enforce mode)</option>
+                        <option value="allowed_universal_admin" @selected(request('outcome')==='allowed_universal_admin')>Allowed (platform admin)</option>
                     </select>
                 </div>
                 <div class="col-md-4">
@@ -109,6 +110,8 @@
                                 <td class="py-3 pe-4 text-end">
                                     @if ($log->outcome === 'blocked')
                                         <span class="badge bg-danger">Denied</span>
+                                    @elseif ($log->outcome === 'allowed_universal_admin')
+                                        <span class="badge bg-info">Platform admin</span>
                                     @else
                                         <span class="badge bg-warning text-dark">Would Block</span>
                                     @endif
@@ -141,7 +144,7 @@
     {{-- Footer note --}}
     <div class="mt-3 d-flex align-items-center gap-2 text-muted small">
         <i class="ti ti-lock"></i>
-        <span>Audit logs are immutable once written. Only <code>would_block</code> and <code>blocked</code> outcomes are recorded — permitted requests are not logged.</span>
+        <span>Audit logs are immutable once written. <code>would_block</code> and <code>blocked</code> outcomes are recorded, as are universal-admin bypasses (<code>allowed_universal_admin</code>); other permitted requests are not logged.</span>
     </div>
 
 </div>

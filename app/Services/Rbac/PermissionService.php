@@ -2,6 +2,7 @@
 
 namespace App\Services\Rbac;
 
+use App\Support\Rbac\UniversalAdmin;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 use App\Services\Rbac\OrgRelationshipService;
@@ -47,6 +48,37 @@ class PermissionService
         string $permissionGroup,
         string $requiredLevel,
         ?int $projectId = null,
+    ): bool {
+        $allowed = $this->evaluate($userId, $orgId, $permissionGroup, $requiredLevel, $projectId);
+
+        if ($allowed || ! UniversalAdmin::is($userId)) {
+            return $allowed;
+        }
+
+        // Tests the ORIGINAL user id only: a delegate of a universal admin never inherits this.
+        if (! DB::table('organizations')->where('id', $orgId)->exists()) {
+            return false;
+        }
+
+        if ($projectId !== null && ! DB::table('projects')
+            ->where('id', $projectId)
+            ->where('org_id', $orgId)
+            ->whereNull('deleted_at')
+            ->exists()) {
+            return false;
+        }
+
+        UniversalAdmin::recordBypass($userId, $orgId, $permissionGroup, strtoupper($requiredLevel), $projectId);
+
+        return true;
+    }
+
+    private function evaluate(
+        int $userId,
+        int $orgId,
+        string $permissionGroup,
+        string $requiredLevel,
+        ?int $projectId,
     ): bool {
         $requiredLevel = strtoupper($requiredLevel);
 

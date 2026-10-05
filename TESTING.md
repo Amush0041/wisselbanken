@@ -13,7 +13,7 @@ anything.
 
 ## Known-failing baseline (updated 2026-09-26, after P2 cleanup)
 
-Full suite on in-memory sqlite (`DB_CONNECTION=sqlite DB_DATABASE=:memory: php artisan test`): **1012 passed / 4 failed** (9759 assertions). The 4 failures are the 3 listed below plus `ExampleTest` (Laravel scaffold, "no such table: divisions"). Tests are PHPUnit-style classes (no Pest installed). The P2 additions are `AuditFindingsRound2Test` (guard over every mapped route, audit and enforce mode) and `P2CleanupBCTest`. Historical note follows: the RBAC suite was **682 passed / 3 failed** (Phase 5a rewrite plus the Phase 5 QA tests and amendment 3 round 2, 651 before round 2; Phase 4 baseline was 568 / 3). (The earlier
+Full suite on in-memory sqlite (`DB_CONNECTION=sqlite DB_DATABASE=:memory: php artisan test`): **1150 passed / 4 failed** (1012 before the universal-admin work). The 4 failures are the 3 listed below plus `ExampleTest` (Laravel scaffold, "no such table: divisions"). Tests are PHPUnit-style classes (no Pest installed). The P2 additions are `AuditFindingsRound2Test` (guard over every mapped route, audit and enforce mode) and `P2CleanupBCTest`. Historical note follows: the RBAC suite was **682 passed / 3 failed** (Phase 5a rewrite plus the Phase 5 QA tests and amendment 3 round 2, 651 before round 2; Phase 4 baseline was 568 / 3). (The earlier
 baseline of 55 passed / 3 failed, 113 assertions was measured **before** the
 projects work.) These 3 failures are pre-existing and independent of any feature work — do not report them as
 a regression you introduced, and do not treat a *new* failure as "probably

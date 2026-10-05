@@ -15,7 +15,7 @@ class OrderController extends Controller
     private function isOrgAdmin(): bool
     {
         $user  = Auth::user();
-        $orgId = session(config('rbac.current_org_session_key'));
+        $orgId = CurrentOrg::sessionOrg((int) Auth::id());
         return $user->role === 'admin' ||
             ($orgId && app(PermissionService::class)->checkPermission($user->id, (int) $orgId, 'user_management', 'F'));
     }
@@ -24,7 +24,7 @@ class OrderController extends Controller
     {
         $this->requireOrgLevel('procurement', 'R');
         $user       = Auth::user();
-        $orgId      = session(config('rbac.current_org_session_key'));
+        $orgId      = CurrentOrg::sessionOrg((int) Auth::id());
         $isOrgAdmin = $this->isOrgAdmin();
 
         $query = Order::with(['items', 'user', 'approvedBy', 'rejectedBy']);
@@ -44,7 +44,7 @@ class OrderController extends Controller
     {
         $this->requireOrgLevel('procurement', 'R');
         $user       = Auth::user();
-        $orgId      = session(config('rbac.current_org_session_key'));
+        $orgId      = CurrentOrg::sessionOrg((int) Auth::id());
         $isOrgAdmin = $this->isOrgAdmin();
 
         $query = Order::with(['items', 'user', 'approvedBy', 'rejectedBy']);

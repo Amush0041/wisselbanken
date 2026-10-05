@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Support\Rbac\UniversalAdmin;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -26,7 +27,7 @@ class CheckRole
             return redirect('login');
         }
 
-        if (Auth::user()->role !== $role) {
+        if (Auth::user()->role !== $role && ! ($role === 'admin' && UniversalAdmin::is(Auth::user()))) {
             if ($request->expectsJson() || $request->ajax()) {
                 $message = $role === 'user' 
                     ? 'Please login as a user to add products to your list. Admin accounts cannot create lists.'
