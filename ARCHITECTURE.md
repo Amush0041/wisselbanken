@@ -313,6 +313,7 @@ after the real run: it must report nothing left to do.
 - **Where the bypass lives**: `PermissionService::checkPermission` and `Project::scopeVisibleTo` (permission and project visibility), `CurrentOrg` / session org resolution, `OrgSwitchController` (a listed user may switch into any org), and `CheckRole`, which admits listed ids to the `/admin` panel.
 - **Audit**: every bypass writes an `rbac_audit_logs` row with outcome `allowed_universal_admin` (deduplicated per request) and a line in the never-pruned `universal-admin-*.log` channel. A failure of either write is caught and falls back to `Log::error`; the bypass decision stays true.
 - **Unchanged**: owner-only actions (delete org, transfer ownership) stay owner-only; a listed user is not in any approver pool; delegation is not transitive; users not on the list behave exactly as before.
+- **UI**: listed users see 'Platform admin panel' and 'Enforcement mode' links in the user navbar (`$navUniversalAdmin`). The org audit-log Enforcement tab labels rows by stored outcome (Blocked / Would Block / Platform admin) and its banner reflects the real `rbac_mode` and `rbac.enforce_batches`.
 - **Deviation**: this departs from plan section 3.4 (no role outside `user_org_roles`) and needs the client's written acknowledgement.
 
 ## 11. Known dead code

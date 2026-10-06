@@ -42,6 +42,8 @@
                 });
             </script>
         </li>
+        <li class="nav-item"><a class="btn btn-sm btn-outline-danger" href="{{ url('admin/dashboard') }}">Platform admin panel</a></li>
+        <li class="nav-item"><a class="btn btn-sm btn-outline-danger" href="{{ url('admin/rbac/enforcement') }}">Enforcement mode</a></li>
         @endif
 
         {{-- Org Switcher --}}

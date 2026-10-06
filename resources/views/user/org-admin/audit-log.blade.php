@@ -212,10 +212,22 @@
     @else
 
     {{-- Enforcement log --}}
+    @if (($rbacMode ?? 'audit') !== 'enforce')
     <div class="alert alert-info py-2 mb-3" style="font-size:.82rem">
         <i class="ti ti-info-circle me-1"></i>
         <strong>Audit mode:</strong> The system is recording every access attempt that <em>would have been blocked</em> if enforcement were active. No users are currently blocked — this log shows what enforcement would look like.
     </div>
+    @elseif (empty($enforceBatches))
+    <div class="alert alert-warning py-2 mb-3" style="font-size:.82rem">
+        <i class="ti ti-shield-lock me-1"></i>
+        <strong>Enforcement is ON for all route groups:</strong> blocked requests are recorded as Blocked.
+    </div>
+    @else
+    <div class="alert alert-warning py-2 mb-3" style="font-size:.82rem">
+        <i class="ti ti-shield-lock me-1"></i>
+        <strong>Enforcement is ON for batches {{ implode(', ', $enforceBatches) }}:</strong> blocked requests in those batches are recorded as Blocked; requests in other batches are only logged as Would Block.
+    </div>
+    @endif
 
     <div class="card border-0 shadow-sm">
         <div class="card-body p-0">
@@ -250,8 +262,12 @@
                                 <td class="py-3">
                                     @if ($entry->outcome === 'allowed_universal_admin')
                                         <span class="badge bg-label-info" style="font-size:.65rem">Platform admin</span>
-                                    @else
+                                    @elseif ($entry->outcome === 'blocked')
+                                        <span class="badge bg-danger" style="font-size:.65rem">Blocked</span>
+                                    @elseif ($entry->outcome === 'would_block')
                                         <span class="badge bg-label-danger" style="font-size:.65rem">Would Block</span>
+                                    @else
+                                        <span class="badge bg-label-secondary" style="font-size:.65rem">{{ $entry->outcome }}</span>
                                     @endif
                                 </td>
                             </tr>

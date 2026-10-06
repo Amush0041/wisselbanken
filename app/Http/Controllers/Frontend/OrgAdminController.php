@@ -403,7 +403,10 @@ class OrgAdminController extends Controller
             ->paginate(20, ['*'], 'ppage')
             ->withQueryString();
 
-        return view('user.org-admin.audit-log', compact('org', 'history', 'members', 'enforcementLog', 'projectMemberLog'));
+        $rbacMode = \App\Models\Rbac\RbacSetting::get('rbac_mode', 'audit');
+        $enforceBatches = array_values((array) config('rbac.enforce_batches', []));
+
+        return view('user.org-admin.audit-log', compact('org', 'history', 'members', 'enforcementLog', 'projectMemberLog', 'rbacMode', 'enforceBatches'));
     }
 
     public function generateInvite(Request $request): JsonResponse
