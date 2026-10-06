@@ -238,6 +238,7 @@ What the tests cannot prove (sqlite): row locks and the concurrent-enrol race,
 - The user must have a verified email, or the listing has no effect.
 - Keep the list short. Remove an id and run `config:clear` to revoke.
 - Use non-listed accounts when running the client's RBAC audit, since listed users are never denied.
+- Listed users can also delete an organization and transfer its ownership without being the owner, and revoke other users' delegations and API tokens in the organization they are working in. Each is logged. The owner-only and own-record limits still apply to every non-listed user.
 - Listed users get 'Platform admin panel' and 'Enforcement mode' links in the top bar.
 - Bypasses are recorded in `rbac_audit_logs` (outcome `allowed_universal_admin`) and in `storage/logs/universal-admin-*.log`, which must be writable by the web server user. Logs are never pruned.
 

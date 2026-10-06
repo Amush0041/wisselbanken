@@ -1049,20 +1049,32 @@ class UniversalAdminTest extends ProjectTestCase
     }
 
     #[DataProvider('modes')]
-    public function test_b_org_delete_and_ownership_transfer_stay_owner_only(string $mode): void
+    public function test_b_listed_user_can_transfer_ownership_and_delete_an_org_they_do_not_own(string $mode): void
     {
         $this->setMode($mode);
         $this->listed($this->ua);
         $orgC = $this->mkOrg('Org C');
         $ownerC = $this->mkUser($orgC, 'organization_owner');
-        $before = [DB::table('organizations')->count(), DB::table('user_org_roles')->count()];
 
-        $this->req($this->ua, 'DELETE', 'org-admin/settings/delete', [], $orgC->id)->assertForbidden();
-        $this->req($this->ua, 'POST', 'org-admin/settings/transfer', ['new_owner_email' => $this->est->email], $orgC->id)->assertForbidden();
+        $this->req($this->ua, 'POST', 'org-admin/settings/transfer', ['new_owner_email' => $this->est->email], $orgC->id)->assertStatus(302);
+        $this->assertSame(0, DB::table('user_org_roles')->where('org_id', $orgC->id)->where('user_id', $ownerC->id)->count(), 'previous owner replaced');
+        $this->assertSame(1, DB::table('rbac_audit_logs')->where('user_id', $this->ua->id)->where('org_id', $orgC->id)->where('reason', 'universal_ownership_transfer')->where('outcome', 'allowed_universal_admin')->count());
 
-        $this->assertSame($before, [DB::table('organizations')->count(), DB::table('user_org_roles')->count()]);
+        $this->req($this->ua, 'DELETE', 'org-admin/settings/delete', [], $orgC->id)->assertStatus(302);
+        $this->assertNull(DB::table('organizations')->where('id', $orgC->id)->first());
+    }
+
+    #[DataProvider('modes')]
+    public function test_b_non_listed_owner_rules_are_unchanged(string $mode): void
+    {
+        $this->setMode($mode);
+        $orgC = $this->mkOrg('Org C');
+        $ownerC = $this->mkUser($orgC, 'organization_owner');
+        $adminC = $this->mkUser($orgC, 'organization_admin');
+
+        $this->req($adminC, 'DELETE', 'org-admin/settings/delete', [], $orgC->id)->assertForbidden();
+        $this->req($adminC, 'POST', 'org-admin/settings/transfer', ['new_owner_email' => $this->est->email], $orgC->id)->assertForbidden();
         $this->assertNotNull(DB::table('organizations')->where('id', $orgC->id)->first());
-        $this->assertSame(1, DB::table('user_org_roles')->where('org_id', $orgC->id)->where('user_id', $ownerC->id)->count());
 
         $this->req($ownerC, 'POST', 'org-admin/settings/transfer', ['new_owner_email' => $this->est->email], $orgC->id)->assertStatus(302);
         $this->assertSame(0, DB::table('user_org_roles')->where('org_id', $orgC->id)->where('user_id', $ownerC->id)->count(), 'the real owner still can');

@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Services\Rbac\DelegationService;
 use App\Services\Rbac\PermissionService;
 use App\Services\Rbac\RoleAssignmentService;
+use App\Support\Rbac\UniversalAdmin;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -41,8 +42,8 @@ class DelegationController extends Controller
         );
 
         // Delegations granted FROM current user (they delegated their identity)
-        $granted = Delegation::with(['toUser', 'grantedBy'])
-            ->where('from_user_id', Auth::id())
+        $granted = Delegation::with(['toUser', 'fromUser', 'grantedBy'])
+            ->when(! UniversalAdmin::is((int) Auth::id()), fn ($q) => $q->where('from_user_id', Auth::id()))
             ->where('org_id', $org->id)
             ->latest()
             ->get();
@@ -114,12 +115,17 @@ class DelegationController extends Controller
     public function destroy(Delegation $delegation): mixed
     {
         $org = $this->currentOrg();
-        abort_if(! $org || $delegation->from_user_id !== Auth::id(), 403);
+        $ownerOverride = $org && $delegation->from_user_id !== Auth::id();
+        abort_if(! $org || ($ownerOverride && (! UniversalAdmin::is((int) Auth::id()) || (int) $delegation->org_id !== (int) $org->id)), 403);
         abort_unless(
             $this->permissions->checkPermission((int) Auth::id(), (int) $org->id, 'delegation_and_impersonation', 'O'),
             403,
             'You do not have permission to perform this action.'
         );
+
+        if ($ownerOverride) {
+            UniversalAdmin::recordBypass((int) Auth::id(), (int) $org->id, 'delegation_and_impersonation', 'O', null, 'universal_delegation_revoke');
+        }
 
         $this->delegations->revoke($delegation->id);
 

@@ -623,8 +623,7 @@ class AuditFindingsRound2Test extends ProjectTestCase
         $ua = $this->mkUser();
         config(['rbac.universal_admin_user_ids' => [$ua->id]]);
         $fixtures = $this->mappedFixtures($this->viewer);
-        // Owner-only by design (isOwner), and "only the creator revokes their own delegation / token" (from_user_id / user_id check).
-        $ownerOnly = ['DELETE org-admin/settings/delete', 'POST org-admin/settings/transfer', 'DELETE org-admin/delegations/{delegation}', 'DELETE org-admin/api-tokens/{apiToken}'];
+        $ownerOnly = [];
         $checked = 0;
         $denied = [];
 

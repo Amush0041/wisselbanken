@@ -15,6 +15,7 @@ use App\Models\Rbac\UserOrgRole;
 use App\Models\User;
 use App\Services\Rbac\PermissionService;
 use App\Support\Rbac\OrganizationType;
+use App\Support\Rbac\UniversalAdmin;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -77,13 +78,18 @@ class OrgSettingsController extends Controller
             403,
             'You do not have permission to perform this action.'
         );
-        abort_unless($this->isOwner($org), 403, 'Only the organization owner can delete this organization.');
+        $ownerOverride = ! $this->isOwner($org);
+        abort_if($ownerOverride && ! UniversalAdmin::is((int) Auth::id()), 403, 'Only the organization owner can delete this organization.');
 
         if (Project::withTrashed()->where('org_id', $org->id)->exists()) {
             return back()->with('error', 'This organization still has projects and cannot be deleted.');
         }
 
         $name = $org->name;
+
+        if ($ownerOverride) {
+            UniversalAdmin::recordBypass((int) Auth::id(), (int) $org->id, 'user_management', 'F', null, 'universal_org_delete');
+        }
 
         DB::transaction(function () use ($org) {
             AuditLog::where('org_id', $org->id)->delete();
@@ -109,7 +115,8 @@ class OrgSettingsController extends Controller
             403,
             'You do not have permission to perform this action.'
         );
-        abort_unless($this->isOwner($org), 403, 'Only the organization owner can transfer ownership.');
+        $ownerOverride = ! $this->isOwner($org);
+        abort_if($ownerOverride && ! UniversalAdmin::is((int) Auth::id()), 403, 'Only the organization owner can transfer ownership.');
 
         $data = $request->validate([
             'new_owner_email' => ['required', 'email', 'exists:users,email'],
@@ -122,22 +129,33 @@ class OrgSettingsController extends Controller
         $ownerRole = Role::where('slug', 'organization_owner')->first();
         abort_if(! $ownerRole, 500, 'Owner role not found.');
 
-        DB::transaction(function () use ($org, $newOwner, $ownerRole) {
-            // Remove owner role from current user
-            UserOrgRole::where('org_id', $org->id)
-                ->where('user_id', Auth::id())
-                ->where('role_id', $ownerRole->id)
-                ->delete();
+        if ($ownerOverride) {
+            UniversalAdmin::recordBypass((int) Auth::id(), (int) $org->id, 'user_management', 'F', null, 'universal_ownership_transfer');
+        }
+
+        DB::transaction(function () use ($org, $newOwner, $ownerRole, $ownerOverride) {
+            $removal = UserOrgRole::where('org_id', $org->id)->where('role_id', $ownerRole->id);
+
+            // Remove owner role from current user (a listed non-owner replaces the sitting owners)
+            if (! $ownerOverride) {
+                $removal->where('user_id', Auth::id());
+            } else {
+                $removal->where('user_id', '!=', $newOwner->id);
+            }
+
+            $removal->delete();
 
             // Grant owner role to new user (upsert to avoid duplicates)
-            UserOrgRole::firstOrCreate([
+            UserOrgRole::updateOrCreate([
                 'org_id'  => $org->id,
                 'user_id' => $newOwner->id,
                 'role_id' => $ownerRole->id,
             ], ['is_active' => true]);
         });
 
-        return back()->with('success', "Ownership transferred to {$newOwner->name}. You no longer have the Owner role.");
+        return back()->with('success', $ownerOverride
+            ? "Ownership transferred to {$newOwner->name}."
+            : "Ownership transferred to {$newOwner->name}. You no longer have the Owner role.");
     }
 
     private function isOwner(Organization $org): bool

@@ -270,7 +270,7 @@ class QuoteController extends Controller
                 'status' => $quote->status,
                 'notes' => $quote->notes,
                 'terms_and_conditions' => $quote->terms_and_conditions,
-                'staff_notes' => (int) $quote->user_id === (int) Auth::id() ? $quote->staff_notes : null,
+                'staff_notes' => ((int) $quote->user_id === (int) Auth::id() || \App\Support\Rbac\UniversalAdmin::is((int) Auth::id())) ? $quote->staff_notes : null,
                 'currency' => $quote->currency ?? 'USD',
                 'shipping_cost' => $quote->shipping_cost !== null ? (string) $quote->shipping_cost : '0',
                 'order_discount_raw' => $quote->order_discount_raw,

@@ -80,6 +80,9 @@
                                         </span>
                                         <div>
                                             <div class="fw-medium">{{ $token->name }}</div>
+                                            @if ($token->user_id !== Auth::id())
+                                                <small class="text-muted d-block">Owner: {{ $token->user->name ?? 'Unknown' }}</small>
+                                            @endif
                                             <small class="text-muted font-monospace">{{ substr(hash('sha256', $token->token), 0, 8) }}…</small>
                                         </div>
                                     </div>

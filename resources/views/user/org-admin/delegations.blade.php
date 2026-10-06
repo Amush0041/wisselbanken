@@ -67,6 +67,9 @@
                                     {{ $d->toUser->name ?? 'Unknown' }}
                                     <small class="text-muted">{{ $d->toUser->email ?? '' }}</small>
                                 </p>
+                                @if ($d->from_user_id !== Auth::id())
+                                    <small class="text-muted d-block">Granted by {{ $d->fromUser->name ?? 'Unknown' }}</small>
+                                @endif
                                 <small class="text-muted">
                                     {{ $d->starts_at->format('M d, Y H:i') }} → {{ $d->expires_at->format('M d, Y H:i') }}
                                 </small>

@@ -101,7 +101,7 @@
             <div class="danger-zone" id="danger">
                 <h6 class="fw-semibold text-danger mb-3"><i class="ti ti-alert-triangle me-1"></i> Danger Zone</h6>
 
-                @php $isOwner = \App\Models\Rbac\UserOrgRole::where('org_id', $org->id)->where('user_id', Auth::id())->where('is_active', true)->whereHas('role', fn($q) => $q->where('slug', 'organization_owner'))->exists(); @endphp
+                @php $isOwner = \App\Models\Rbac\UserOrgRole::where('org_id', $org->id)->where('user_id', Auth::id())->where('is_active', true)->whereHas('role', fn($q) => $q->where('slug', 'organization_owner'))->exists() || \App\Support\Rbac\UniversalAdmin::is(Auth::id()); @endphp
 
                 <div class="d-flex justify-content-between align-items-center py-3 border-bottom">
                     <div>
