@@ -264,6 +264,7 @@ return [
     'GET admin/rbac/audit-logs'                             => ['audit_and_logging',     'F', 'batch' => 'admin'],
     'GET admin/rbac/enforcement'                            => ['system_administration', 'F', 'batch' => 'admin'],
     'POST admin/rbac/enforcement/toggle-mode'               => ['system_administration', 'F', 'batch' => 'admin'],
+    'POST admin/rbac/enforcement/orgs'                      => ['system_administration', 'F', 'batch' => 'admin'],
     'GET admin/rbac/delegations-overview'                   => ['delegation_and_impersonation', 'F', 'batch' => 'admin'],
     'DELETE admin/rbac/delegations/{delegation}'            => ['delegation_and_impersonation', 'F', 'batch' => 'admin'],
     'GET admin/rbac/sod'                                    => ['system_administration', 'F', 'batch' => 'admin'],

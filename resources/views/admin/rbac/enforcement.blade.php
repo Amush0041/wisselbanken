@@ -126,6 +126,27 @@
         </div>
     </div>
 
+    {{-- Per-organization enforcement --}}
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white border-bottom py-3">
+            <h6 class="fw-semibold mb-0">Enforced organizations</h6>
+            <small class="text-muted">Checked organizations are enforced on all batches even while the global mode is Audit. Takes effect within 60 seconds across all servers.</small>
+        </div>
+        <div class="card-body">
+            <form action="{{ route('admin.rbac.enforcement.orgs') }}" method="POST">
+                @csrf
+                <select name="org_ids[]" multiple size="8" class="form-select mb-3">
+                    @foreach ($allOrgs as $o)
+                        <option value="{{ $o->id }}" @selected(in_array($o->id, $enforcedOrgIds, true))>{{ $o->name }} (#{{ $o->id }})</option>
+                    @endforeach
+                </select>
+                <small class="text-muted d-block mb-3">Hold Ctrl/Cmd to select several. Saving with nothing selected turns per-organization enforcement off.</small>
+                <button type="submit" class="btn text-white" style="background:#6b1c1c"
+                        onclick="return confirm('Save enforced organizations? Selected organizations will have non-compliant requests blocked.')">Save</button>
+            </form>
+        </div>
+    </div>
+
     {{-- Enforcement Batches table --}}
     <div class="card border-0 shadow-sm mb-4">
         <div class="card-header bg-white border-bottom py-3">
@@ -214,6 +235,8 @@
                                     <span class="badge bg-label-warning me-1">Would Block</span>
                                 @elseif ($log->outcome === 'allowed_universal_admin')
                                     <span class="badge bg-label-info me-1">Platform admin</span>
+                                @elseif ($log->outcome === 'enforcement_changed')
+                                    <span class="badge bg-label-secondary me-1">Setting changed</span>
                                 @else
                                     <span class="badge bg-label-secondary me-1">Logged</span>
                                 @endif

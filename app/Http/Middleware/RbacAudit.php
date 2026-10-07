@@ -149,9 +149,9 @@ class RbacAudit
         string $reason,
         ?int $orgId,
     ): Response {
-        $enforcing = $this->isEnforcing($batch);
+        $enforcing = $this->isEnforcing($batch, $orgId);
 
-        AuditLog::create([
+        $row = AuditLog::create([
             'user_id' => $request->user()->id,
             'org_id' => $orgId,
             'method' => $request->method(),
@@ -186,6 +186,8 @@ class RbacAudit
             }
             return $redirect;
         }
+
+        $request->attributes->set('rbac_audit_row', $row->id);
 
         return $next($request); // audit mode — let it through exactly as before
     }
@@ -303,17 +305,20 @@ class RbacAudit
     }
 
     /**
-     * Whether this batch should actually be blocked, given the configured mode/batches.
+     * Whether this batch should actually be blocked, given the configured mode/batches or the org's per-org enforcement.
      */
-    private function isEnforcing(?string $batch): bool
+    private function isEnforcing(?string $batch, ?int $orgId): bool
     {
-        if (RbacSetting::get('rbac_mode', 'audit') !== 'enforce') {
-            return false;
+        if (RbacSetting::get('rbac_mode', 'audit') === 'enforce') {
+            $batches = config('rbac.enforce_batches', []);
+
+            // Empty batch list under 'enforce' = enforce everything.
+            if ($batches === [] || ($batch !== null && in_array($batch, $batches, true))) {
+                return true;
+            }
         }
 
-        $batches = config('rbac.enforce_batches', []);
-
-        // Empty batch list under 'enforce' = enforce everything.
-        return $batches === [] || ($batch !== null && in_array($batch, $batches, true));
+        // Per-org enforcement covers all batches and can only add to the global rule.
+        return $orgId !== null && in_array($orgId, RbacSetting::enforcedOrgIds(), true);
     }
 }

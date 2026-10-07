@@ -100,6 +100,23 @@ to 60 seconds), not `.env`. Change it as a platform admin under
 the row. Local `.env` says enforce; the live server is reported to be in
 enforce mode (not verifiable from the repository).
 
+**Enforcing selected organizations only.** As a platform admin open
+Admin > RBAC > Enforcement, pick organizations under "Enforced organizations"
+and Save (`POST admin/rbac/enforcement/orgs`). Those organizations are enforced
+on all batches while the global mode stays audit; saving an empty selection
+turns it off. It takes up to 60 seconds to apply and each change is logged
+(`enforcement_changed`). Before enabling an org, review its `would_block` rows
+(these are requests that would start being refused).
+
+**Blocked versus Would Block.** Blocked means a request was really refused
+(by the middleware in enforce mode, or by a controller check in any mode).
+Would Block means only the middleware would have refused it and nothing else
+did, so the request went through.
+
+**Projects page.** `/org-admin/projects` lists all organization projects only
+for users with project management Full access; everyone else sees only the
+projects they are an active member of.
+
 Because audit mode lets requests through, controllers also check levels
 themselves (section 7), so the important protections hold in both modes.
 

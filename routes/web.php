@@ -285,6 +285,7 @@ Route::middleware(['auth','verified','checkRole:admin'])->prefix('admin')->group
         Route::get('audit-logs', 'auditLogs')->name('audit-logs');
         Route::get('enforcement', 'enforcement')->name('enforcement');
         Route::post('enforcement/toggle-mode', 'toggleMode')->name('enforcement.toggle-mode');
+        Route::post('enforcement/orgs', 'updateEnforcedOrgs')->name('enforcement.orgs');
 Route::get('users', 'users')->name('users');
         Route::post('roles/create', 'storeRole')->name('roles.create');
         Route::get('delegations-overview', 'adminDelegations')->name('delegations');

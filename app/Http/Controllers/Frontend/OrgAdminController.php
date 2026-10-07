@@ -406,7 +406,9 @@ class OrgAdminController extends Controller
         $rbacMode = \App\Models\Rbac\RbacSetting::get('rbac_mode', 'audit');
         $enforceBatches = array_values((array) config('rbac.enforce_batches', []));
 
-        return view('user.org-admin.audit-log', compact('org', 'history', 'members', 'enforcementLog', 'projectMemberLog', 'rbacMode', 'enforceBatches'));
+        $orgEnforced = in_array((int) $org->id, \App\Models\Rbac\RbacSetting::enforcedOrgIds(), true);
+
+        return view('user.org-admin.audit-log', compact('org', 'history', 'members', 'enforcementLog', 'projectMemberLog', 'rbacMode', 'enforceBatches', 'orgEnforced'));
     }
 
     public function generateInvite(Request $request): JsonResponse
@@ -591,9 +593,11 @@ class OrgAdminController extends Controller
 
         $this->requireOrgLevel($org, 'project_management', 'R');
 
-        $memberIds = UserOrgRole::where('org_id', $org->id)->where('is_active', true)->pluck('user_id')->unique();
+        $canManageProjects = $this->permissions->checkPermission((int) Auth::id(), (int) $org->id, 'project_management', 'F');
 
-        $projects = Project::where('org_id', $org->id)
+        $projects = ($canManageProjects
+            ? Project::where('org_id', $org->id)
+            : Project::visibleTo((int) Auth::id(), (int) $org->id))
             ->withCount('quotes')
             ->orderBy('created_at', 'desc')
             ->get()
@@ -607,9 +611,9 @@ class OrgAdminController extends Controller
                 return $project;
             });
 
-        $members = User::whereIn('id', $memberIds)->orderBy('name')->get(['id', 'name', 'email']);
-
-        $canManageProjects = $this->permissions->checkPermission((int) Auth::id(), (int) $org->id, 'project_management', 'F');
+        $members = $canManageProjects
+            ? User::whereIn('id', UserOrgRole::where('org_id', $org->id)->where('is_active', true)->pluck('user_id')->unique())->orderBy('name')->get(['id', 'name', 'email'])
+            : collect();
 
         return view('user.org-admin.projects', compact('org', 'projects', 'members', 'canManageProjects'));
     }

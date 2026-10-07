@@ -212,10 +212,15 @@
     @else
 
     {{-- Enforcement log --}}
-    @if (($rbacMode ?? 'audit') !== 'enforce')
+    @if (! empty($orgEnforced))
+    <div class="alert alert-warning py-2 mb-3" style="font-size:.82rem">
+        <i class="ti ti-shield-lock me-1"></i>
+        <strong>Enforcement ON for this organization (all batches):</strong> denied requests are recorded as Blocked.
+    </div>
+    @elseif (($rbacMode ?? 'audit') !== 'enforce')
     <div class="alert alert-info py-2 mb-3" style="font-size:.82rem">
         <i class="ti ti-info-circle me-1"></i>
-        <strong>Audit mode:</strong> The system is recording every access attempt that <em>would have been blocked</em> if enforcement were active. No users are currently blocked — this log shows what enforcement would look like.
+        <strong>Audit mode:</strong> The system is recording every access attempt that <em>would have been blocked</em> if enforcement were active. Some actions are already refused by controller-level checks in every mode; those appear as Blocked. Would Block means only that the access check would have refused the request and nothing else did.
     </div>
     @elseif (empty($enforceBatches))
     <div class="alert alert-warning py-2 mb-3" style="font-size:.82rem">
@@ -264,6 +269,8 @@
                                         <span class="badge bg-label-info" style="font-size:.65rem">Platform admin</span>
                                     @elseif ($entry->outcome === 'blocked')
                                         <span class="badge bg-danger" style="font-size:.65rem">Blocked</span>
+                                    @elseif ($entry->outcome === 'enforcement_changed')
+                                        <span class="badge bg-label-secondary" style="font-size:.65rem">Setting changed</span>
                                     @elseif ($entry->outcome === 'would_block')
                                         <span class="badge bg-label-danger" style="font-size:.65rem">Would Block</span>
                                     @else

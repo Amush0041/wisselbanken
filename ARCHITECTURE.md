@@ -88,7 +88,7 @@ Source of the original spec: `Revised_RBAC_Module_Implementation_Plan.pdf`
 
 `config/route_permission_map.php` maps `"METHOD uri"` (or `"* uri"` when every
 verb shares the rule) to `[group, level, 'batch' => ..., 'project_param' | 'quote_param' => ...]`.
-Currently 242 entries: 108 `admin`, 75 `read`, 35 `write`, 24 `approve` batch.
+Currently 243 entries: 109 `admin`, 75 `read`, 35 `write`, 24 `approve` batch.
 
 - `project_param`: the named route parameter holds a `projects.id` (8 entries,
   all under `projects/{project}...`).
@@ -129,6 +129,22 @@ A failed check is written to `rbac_audit_logs` (`outcome` = `would_block` or
   (`rbac_error`, `message`); ordinary browser requests are redirected back
   with a `rbac_denied` flash (a 302, by design). This is why a no-org user in
   enforce mode gets a 302 (known test failure, section 12).
+- **Per-organization enforcement.** The `rbac_settings` row
+  `rbac_enforced_org_ids` (JSON array of org ids, no migration; missing, empty
+  or invalid = no orgs) makes `RbacAudit::isEnforcing($batch, $orgId)` true for
+  those orgs on all batches, ignoring `RBAC_ENFORCE_BATCHES`, while the global
+  mode stays audit. It is OR-ed with the global rule, so it can never weaken
+  global enforce. Edit it at `POST admin/rbac/enforcement/orgs` (checkRole:admin,
+  Admin > RBAC > Enforcement card "Enforced organizations"); each org added or
+  removed writes an `rbac_audit_logs` row (`enforcement_changed`, reason
+  `enforcement_enabled`/`enforcement_disabled`) plus a `rbac-enforcement-change`
+  log line. 60-second cache, same as the mode. Rollback: save an empty selection.
+- **Blocked versus Would Block.** `App\Support\Rbac\DenialRecorder` is called
+  from the central 403 handler in `bootstrap/app.php`. A controller `abort(403)`
+  in audit mode upgrades the same request's `would_block` row to `blocked`;
+  if the middleware wrote no row (unmapped route or integrity abort) it inserts
+  one with `reason = controller_denied`. So Blocked = a real refusal; Would Block
+  = only the middleware would have refused. Responses are unchanged.
 - Local `.env` says `RBAC_MODE=enforce` and `RBAC_ENFORCE_BATCHES=admin,read,write,approve`.
   Production is reported to be in enforce mode; this cannot be verified from
   the repository.
@@ -343,6 +359,11 @@ assume rep-agency seller authorization is enforced until this is fixed.
 5. Phase 5b tightening (section 9) and the backfill command removal.
 
 ## Change log (newest first)
+
+- 2026-10-07 - Per-organization enforcement (`rbac_enforced_org_ids`), real
+  controller denials recorded as Blocked via `DenialRecorder`, audit-mode banner
+  reworded, `/org-admin/projects` shows only own projects unless
+  `project_management` F (section 4.3).
 
 - 2026-09-26 - Rewritten for the Projects entity, project-keyed membership and
   logging, RFQ project scope and approval routing (zero approvers refused),

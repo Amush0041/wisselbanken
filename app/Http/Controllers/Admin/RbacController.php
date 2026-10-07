@@ -27,6 +27,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 
 /**
@@ -58,8 +59,9 @@ class RbacController extends Controller
             ->groupBy('batch', 'outcome')
             ->get()
             ->groupBy('batch');
+        $enforcedOrgs = Organization::whereIn('id', RbacSetting::enforcedOrgIds())->orderBy('name')->pluck('name');
 
-        return view('admin.rbac.index', compact('stats', 'mode', 'enforceBatches', 'byBatch'));
+        return view('admin.rbac.index', compact('stats', 'mode', 'enforceBatches', 'byBatch', 'enforcedOrgs'));
     }
 
 /** Read-only role × permission-group matrix. */
@@ -240,7 +242,10 @@ class RbacController extends Controller
 
         $recentActivity = AuditLog::with('user')->latest('id')->limit(5)->get();
 
-        return view('admin.rbac.enforcement', compact('mode', 'enforceBatches', 'byBatch', 'recentActivity'));
+        $allOrgs = Organization::orderBy('name')->get(['id', 'name']);
+        $enforcedOrgIds = RbacSetting::enforcedOrgIds();
+
+        return view('admin.rbac.enforcement', compact('mode', 'enforceBatches', 'byBatch', 'recentActivity', 'allOrgs', 'enforcedOrgIds'));
     }
 
     /** Toggle RBAC enforcement mode between audit and enforce. */
@@ -251,6 +256,56 @@ class RbacController extends Controller
         RbacSetting::set('rbac_mode', $data['mode']);
 
         return back()->with('success', 'Enforcement mode updated to ' . strtoupper($data['mode']) . '. Takes effect within 60 seconds across all servers.');
+    }
+
+    /** Replace the set of organizations that are enforced regardless of the global mode. */
+    public function updateEnforcedOrgs(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'org_ids'   => ['nullable', 'array'],
+            'org_ids.*' => ['integer', 'exists:organizations,id'],
+        ]);
+
+        $old = RbacSetting::enforcedOrgIds();
+        $new = array_values(array_unique(array_map('intval', $data['org_ids'] ?? [])));
+        sort($new);
+
+        RbacSetting::set('rbac_enforced_org_ids', json_encode($new));
+
+        $changes = [];
+        foreach (array_diff($new, $old) as $orgId) {
+            $changes[$orgId] = 'enforcement_enabled';
+        }
+        foreach (array_diff($old, $new) as $orgId) {
+            $changes[$orgId] = 'enforcement_disabled';
+        }
+
+        foreach ($changes as $orgId => $reason) {
+            $context = [
+                'user_id'          => $request->user()->id,
+                'org_id'           => $orgId,
+                'method'           => $request->method(),
+                'route_uri'        => $request->route()?->uri() ?? $request->path(),
+                'permission_group' => 'system_administration',
+                'required_level'   => 'F',
+                'batch'            => 'admin',
+                'reason'           => $reason,
+            ];
+
+            try {
+                AuditLog::create($context + ['outcome' => 'enforcement_changed']);
+            } catch (\Throwable $e) {
+                Log::error('rbac enforcement change audit row write failed', ['org_id' => $orgId, 'error' => get_class($e)]);
+            }
+
+            try {
+                Log::info('rbac-enforcement-change', $context);
+            } catch (\Throwable $e) {
+                Log::error('rbac enforcement change log write failed', ['org_id' => $orgId, 'error' => get_class($e)]);
+            }
+        }
+
+        return back()->with('success', 'Enforced organizations updated. Takes effect within 60 seconds across all servers.');
     }
 
     /** Platform-admin: all users with their org memberships and roles. */

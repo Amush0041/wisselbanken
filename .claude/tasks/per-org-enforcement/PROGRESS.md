@@ -1,0 +1,19 @@
+# PROGRESS: per-org-enforcement
+
+- D1 done: RbacSetting::enforcedOrgIds (new), RbacAudit::isEnforcing($batch,$orgId) = global rule OR org in set, fail() passes org and stores `rbac_audit_row` request attribute in audit pass-through. Files: app/Models/Rbac/RbacSetting.php, app/Http/Middleware/RbacAudit.php. No deviation.
+- D2 done: POST admin/rbac/enforcement/orgs (admin.rbac.enforcement.orgs) + map entry (243 / 109 admin), RbacController::updateEnforcedOrgs (exists validation, diff logging enforcement_changed + Log::info, both in try/catch), enforcement page card, index alert listing enforced orgs. Files: routes/web.php, config/route_permission_map.php, app/Http/Controllers/Admin/RbacController.php, resources/views/admin/rbac/{enforcement,index}.blade.php. No deviation.
+- D3 done: auditLog passes orgEnforced; per-org banner first branch; audit banner reworded (decision 9); "Setting changed" labels and filter option. Files: OrgAdminController, user/org-admin/audit-log.blade.php, admin/rbac/{audit-logs,enforcement}.blade.php.
+- D4 done: App\Support\Rbac\DenialRecorder (upgrade same-request would_block row, else insert controller_denied; per-request guard; try/catch), called in bootstrap/app.php 403 handler after the guest/403 filter. Response unchanged.
+- D5 done: OrgAdminController::projects: project_management F -> all org projects; else Project::visibleTo; org-user dropdown empty for non-managers. View already guards on $canManageProjects (no view change).
+- D6 done: ARCHITECTURE.md (4.3 per-org + Blocked/Would Block, route count 243/109, change log), HANDOVER-CLIENT.md. Deviation (benign): CLAUDE.md and TESTING.md not edited (task brief listed only ARCHITECTURE/HANDOVER-CLIENT; TESTING baseline unchanged).
+- D7: full suite 1224 passed / 4 failed (the 4 known). No existing test needed editing (none broke on row counts). php artisan view:cache + view:clear OK. No new tests written (QA).
+- Status: Developer steps D1-D7 complete; ready for Architect compliance pass / QA.
+
+## QA (2026-10-07)
+
+- Added tests/Feature/Rbac/PerOrgEnforcementTest.php (100 tests: parsing, isEnforcing matrix over 4 batches, admin card save/validation/logging, DenialRecorder, logs and banners, /org-admin/projects scoping, no-regression). No app code changed.
+- Result: 99 pass, 1 FAIL = real product finding (not baseline): `test_a_json_object_is_not_a_list_and_parses_to_empty`. `RbacSetting::enforcedOrgIds()` on the stored value `{"a":2}` returns [2] (json_decode assoc array, values scanned). Impact: only reachable by hand-editing the DB row (the admin save always writes a list); an object value would enforce org 2. Fix proposal for Architect: require `array_is_list($decoded)`. Routed to Orchestrator/Architect, not fixed by QA.
+- Mutation proofs (scratch copy, real vendor): 37 mutants, 36 killed, 1 survivor = equivalent (M11, `! is_string($raw)` guard: null/non-string decodes to [] anyway). Initial survivors M15 (once-per-request), M17 (guest check), M25 (visibleTo org filter) were closed with new tests and re-killed.
+- Baseline-compat: the no-regression tests were run against HEAD versions of the 7 changed app/config/route files and pass (only the two tests that need per-org features fail there, as expected).
+- Full suite (real repo, sqlite memory): 1323 passed / 5 failed = the 4 known (ExampleTest, AuditMiddlewareTest 'enforce mode blocks and records blocked', SeedMatrixTest 'seeds expected counts', 'phase distribution') + the new finding test above.
+- Fix: RbacSetting::enforcedOrgIds() now returns [] unless the decoded JSON is a list (`! is_array($decoded) || ! array_is_list($decoded)`), closing the {"a":2} -> [2] finding. File: app/Models/Rbac/RbacSetting.php. No deviation. PerOrgEnforcementTest 100/100 pass; full suite 1324 passed / 4 failed (the 4 known baseline failures).

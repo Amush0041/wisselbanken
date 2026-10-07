@@ -32,6 +32,8 @@ return Application::configure(basePath: dirname(__DIR__))
                 return null;
             }
 
+            \App\Support\Rbac\DenialRecorder::record($request);
+
             $message = trim((string) $e->getMessage());
             if ($message === '' || $message === 'This action is unauthorized.') {
                 $message = 'You do not have permission to perform this action.';

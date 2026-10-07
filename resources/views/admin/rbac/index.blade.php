@@ -22,6 +22,13 @@
 
     @include('admin.rbac._nav')
 
+    @if ($enforcedOrgs->isNotEmpty())
+        <div class="alert alert-warning py-2 mb-3" style="font-size:.82rem">
+            <i class="ti ti-shield-lock me-1"></i>
+            <strong>Enforced organizations:</strong> {{ $enforcedOrgs->implode(', ') }}
+        </div>
+    @endif
+
     {{-- Compact stats row --}}
     <div class="card border-0 shadow-sm mb-3">
         <div class="card-body py-3">

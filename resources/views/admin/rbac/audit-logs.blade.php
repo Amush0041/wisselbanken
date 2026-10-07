@@ -29,6 +29,7 @@
                         <option value="">All Events</option>
                         <option value="would_block" @selected(request('outcome')==='would_block')>Would Block (audit mode)</option>
                         <option value="blocked" @selected(request('outcome')==='blocked')>Blocked (enforce mode)</option>
+                        <option value="enforcement_changed" @selected(request('outcome')==='enforcement_changed')>Setting changed</option>
                         <option value="allowed_universal_admin" @selected(request('outcome')==='allowed_universal_admin')>Allowed (platform admin)</option>
                     </select>
                 </div>
@@ -112,6 +113,8 @@
                                         <span class="badge bg-danger">Denied</span>
                                     @elseif ($log->outcome === 'allowed_universal_admin')
                                         <span class="badge bg-info">Platform admin</span>
+                                    @elseif ($log->outcome === 'enforcement_changed')
+                                        <span class="badge bg-secondary">Setting changed</span>
                                     @else
                                         <span class="badge bg-warning text-dark">Would Block</span>
                                     @endif
