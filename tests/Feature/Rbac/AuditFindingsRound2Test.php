@@ -293,7 +293,7 @@ class AuditFindingsRound2Test extends ProjectTestCase
         });
         $this->setMode('enforce');
         foreach ([$this->sales, $this->viewer, $this->super] as $i => $u) {
-            DB::table('customers')->insert(['id' => 10 + $i, 'user_id' => $u->id, 'company_name' => "C$i", 'created_at' => now(), 'updated_at' => now()]);
+            DB::table('customers')->insert(['id' => 10 + $i, 'user_id' => $u->id, 'org_id' => (int) DB::table('user_org_roles')->where('user_id', $u->id)->where('is_active', 1)->orderBy('id')->value('org_id'), 'company_name' => "C$i", 'created_at' => now(), 'updated_at' => now()]);
         }
 
         $this->req2($this->sales, 'GET', 'customers/10')->assertOk();

@@ -20,11 +20,10 @@ class CustomerController extends Controller
 
     public function list(Request $request)
     {
-        $this->requireOrgLevel('quote_rfq_management', 'R');
-        $userId = Auth::id();
+        $orgId = $this->requireOrgLevel('quote_rfq_management', 'R');
 
         $q = Customer::query()
-            ->forUser($userId);
+            ->forOrg($orgId);
 
         if ($request->filled('search')) {
             $s = $request->get('search');
@@ -83,8 +82,8 @@ class CustomerController extends Controller
 
     public function show($id)
     {
-        $this->requireOrgLevel('quote_rfq_management', 'R');
-        $customer = $this->resolveUserCustomer($id);
+        $orgId = $this->requireOrgLevel('quote_rfq_management', 'R');
+        $customer = $this->resolveOrgCustomer($id, $orgId);
 
         $logs = CustomerActivityLog::with('user')
             ->where('customer_id', $customer->id)
@@ -111,9 +110,10 @@ class CustomerController extends Controller
 
     public function store(Request $request)
     {
-        $this->requireOrgLevel('user_management', 'S');
+        $orgId = $this->requireOrgLevel('user_management', 'S');
         $data = $this->validated($request);
         $data['user_id'] = Auth::id();
+        $data['org_id'] = $orgId;
 
         $customer = Customer::create($data);
 
@@ -134,8 +134,8 @@ class CustomerController extends Controller
 
     public function update(Request $request, $id)
     {
-        $this->requireOrgLevel('user_management', 'O');
-        $customer = $this->resolveUserCustomer($id);
+        $orgId = $this->requireOrgLevel('user_management', 'O');
+        $customer = $this->resolveOrgCustomer($id, $orgId);
 
         $data = $this->validated($request);
         $customer->update($data);
@@ -156,8 +156,8 @@ class CustomerController extends Controller
 
     public function destroy($id)
     {
-        $this->requireOrgLevel('user_management', 'F');
-        $customer = $this->resolveUserCustomer($id);
+        $orgId = $this->requireOrgLevel('user_management', 'F');
+        $customer = $this->resolveOrgCustomer($id, $orgId);
 
         CustomerActivityLog::create([
             'customer_id' => $customer->id,
@@ -206,14 +206,14 @@ class CustomerController extends Controller
         ]);
     }
 
-    private function resolveUserCustomer($id): Customer
+    private function resolveOrgCustomer($id, int $orgId): Customer
     {
-        return Customer::forUser(Auth::id())
+        return Customer::forOrg($orgId)
             ->where('id', $id)
             ->firstOrFail();
     }
 
-    private function requireOrgLevel(string $group, string $level): void
+    private function requireOrgLevel(string $group, string $level): int
     {
         $userId = (int) Auth::id();
         $orgId = (int) CurrentOrg::id($userId);
@@ -223,5 +223,7 @@ class CustomerController extends Controller
             403,
             'You do not have permission to perform this action.'
         );
+
+        return $orgId;
     }
 }

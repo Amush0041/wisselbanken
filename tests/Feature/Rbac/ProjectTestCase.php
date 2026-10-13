@@ -83,6 +83,7 @@ abstract class ProjectTestCase extends RbacTestCase
         Schema::create('customers', function (Blueprint $t) {
             $t->id();
             $t->unsignedBigInteger('user_id')->nullable();
+            $t->unsignedBigInteger('org_id')->nullable();
             $t->string('company_name')->nullable();
             $t->boolean('is_active')->default(true);
             $t->timestamps();

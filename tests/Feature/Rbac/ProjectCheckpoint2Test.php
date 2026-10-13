@@ -53,7 +53,7 @@ class ProjectCheckpoint2Test extends ProjectTestCase
     private function customer(User $u, string $name, bool $active = true, ?string $deletedAt = null): int
     {
         return (int) DB::table('customers')->insertGetId([
-            'user_id' => $u->id, 'company_name' => $name, 'is_active' => $active, 'deleted_at' => $deletedAt,
+            'user_id' => $u->id, 'org_id' => (int) DB::table('user_org_roles')->where('user_id', $u->id)->where('is_active', 1)->orderBy('id')->value('org_id'), 'company_name' => $name, 'is_active' => $active, 'deleted_at' => $deletedAt,
             'created_at' => now(), 'updated_at' => now(),
         ]);
     }
@@ -480,25 +480,26 @@ class ProjectCheckpoint2Test extends ProjectTestCase
     // ---- 3. inline Add estimate --------------------------------------------------
 
     #[DataProvider('modes')]
-    public function test_show_passes_only_the_users_own_active_customers_to_a_creator(string $mode): void
+    public function test_show_passes_the_orgs_active_customers_to_a_creator_including_teammates(string $mode): void
     {
         $this->setMode($mode);
         $mine = $this->customer($this->est, 'Mine');
         $mine2 = $this->customer($this->est, 'Alpha');
         $this->customer($this->est, 'Inactive', false);
         $this->customer($this->est, 'Trashed', true, now()->toDateTimeString());
-        $this->customer($this->owner, 'Owners');
-        $this->customer($this->architect, 'Architects');
+        $owners = $this->customer($this->owner, 'Owners');
+        $architects = $this->customer($this->architect, 'Architects');
+        $this->customer($this->outsider, 'OtherOrgCo');
 
         $page = $this->actingAs($this->est)->get("projects/{$this->p1}")->assertOk();
 
         $this->assertTrue($page->viewData('canCreateEstimates'));
-        $this->assertSame(['Alpha', 'Mine'], $page->viewData('customers')->pluck('name')->all());
-        $this->assertSame([$mine2, $mine], $page->viewData('customers')->pluck('id')->all());
+        $this->assertSame(['Alpha', 'Architects', 'Mine', 'Owners'], $page->viewData('customers')->pluck('name')->all());
+        $this->assertEqualsCanonicalizing([$mine, $mine2, $owners, $architects], $page->viewData('customers')->pluck('id')->all());
         $page->assertSee('id="addEstimateModal"', false);
         $page->assertSee(route('projects.quotes.store', $this->p1), false);
-        $page->assertDontSee('Owners');
-        $page->assertDontSee('Architects');
+        $page->assertSee('Owners');
+        $page->assertDontSee('OtherOrgCo');
         $page->assertDontSee('Inactive');
         $page->assertDontSee('Trashed');
     }
@@ -557,9 +558,23 @@ class ProjectCheckpoint2Test extends ProjectTestCase
         $this->assertSame('Inline', $row->name);
     }
 
-    public function test_posting_another_users_customer_through_the_form_is_refused(): void
+    #[DataProvider('modes')]
+    public function test_posting_a_teammates_customer_of_the_same_org_through_the_form_is_allowed(string $mode): void
     {
+        $this->setMode($mode);
         $theirs = $this->customer($this->owner, 'Owners');
+        $before = DB::table('quotes')->count();
+
+        $id = $this->req($this->est, 'POST', "projects/{$this->p1}/quotes", ['customer_id' => $theirs])->assertOk()->json('quote_id');
+        $this->assertSame($before + 1, DB::table('quotes')->count());
+        $this->assertSame($theirs, (int) DB::table('quotes')->where('id', $id)->value('customer_id'));
+    }
+
+    #[DataProvider('modes')]
+    public function test_posting_another_orgs_customer_through_the_form_is_refused(string $mode): void
+    {
+        $this->setMode($mode);
+        $theirs = $this->customer($this->outsider, 'OtherOrgCo');
         $before = DB::table('quotes')->count();
 
         $this->req($this->est, 'POST', "projects/{$this->p1}/quotes", ['customer_id' => $theirs])->assertNotFound();

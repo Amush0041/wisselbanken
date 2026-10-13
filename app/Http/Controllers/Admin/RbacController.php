@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Customer;
 use App\Models\Project;
 use App\Models\Quote;
 use App\Models\Rbac\ApiToken;
@@ -556,6 +557,14 @@ class RbacController extends Controller
 
         if (Quote::withTrashed()->where('user_id', $user->id)->exists()) {
             return back()->with('error', 'This user owns quotes and cannot be deleted. Reassign or delete those quotes first.');
+        }
+
+        $customersInUse = Customer::where('user_id', $user->id)
+            ->whereIn('id', Quote::withTrashed()->whereNotNull('customer_id')->select('customer_id'))
+            ->count();
+
+        if ($customersInUse > 0) {
+            return back()->with('error', "This user created {$customersInUse} ".($customersInUse === 1 ? 'customer' : 'customers').' that '.($customersInUse === 1 ? 'is' : 'are').' used by estimates and cannot be deleted. Reassign or remove those estimates first.');
         }
 
         $name = $user->name;

@@ -69,7 +69,7 @@ class ProjectWorkspaceController extends Controller
             : collect();
 
         $customers = $canCreateEstimates
-            ? Customer::where('user_id', $userId)->where('is_active', true)
+            ? Customer::forOrg((int) $project->org_id)->where('is_active', true)
                 ->get()
                 ->map(fn (Customer $c) => [
                     'id' => $c->id,

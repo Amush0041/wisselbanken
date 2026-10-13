@@ -202,7 +202,24 @@ in a different organization, duplicate line codes). Plan: run 5b only after the
 backfill and about 14 days of running 5a, then remove the backfill command about
 30 days after. 5b has never been run anywhere.
 
+**Customers are shared per organization.** Release order: run only
+`php artisan migrate --path=database/migrations/2026_10_14_000001_add_org_id_to_customers_table.php --force`
+(plain `migrate` stops at the guarded `2026_09_25_*` files), then
+`php artisan customers:backfill-org --dry-run`, review the CSVs (supply an
+overrides CSV `customer_id,org_id` for unresolved rows), run it for real with
+`--force`, then upload the code, then run the backfill once more to catch
+customers created by the old code in between. Uploading the code before the
+backfill makes every existing customer disappear. Customers left with no
+organization stay invisible to everyone.
+
+Deleting a user (admin RBAC screen) is refused while that user created customers that estimates use; reassign or remove those estimates first. Users without such customers delete as before.
+
 ## 10. Commands
+
+- `php artisan customers:backfill-org [--dry-run] [--overrides=file.csv] [--force]`
+  Fills `customers.org_id` (quote organization, else the creator's single active
+  organization, else left empty and reported). Safe to re-run. Exit code 0 clean,
+  1 unresolved rows remain, 2 refused.
 
 - `php artisan projects:backfill [--dry-run] [--overrides=file.csv] [--force] [--allow-live]`
   Groups quotes without a project into projects and moves their old

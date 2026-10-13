@@ -12,6 +12,7 @@ class Customer extends Model
 
     protected $fillable = [
         'user_id',
+        'org_id',
         'company_name',
         'first_name',
         'last_name',
@@ -46,14 +47,19 @@ class Customer extends Model
         return $this->belongsTo(User::class);
     }
 
+    public function organization()
+    {
+        return $this->belongsTo(Organization::class, 'org_id');
+    }
+
     public function activityLogs()
     {
         return $this->hasMany(CustomerActivityLog::class);
     }
 
-    public function scopeForUser(Builder $query, int $userId): Builder
+    public function scopeForOrg(Builder $query, int $orgId): Builder
     {
-        return $query->where('user_id', $userId);
+        return $query->where('customers.org_id', $orgId);
     }
 }
 

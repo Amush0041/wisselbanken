@@ -376,7 +376,7 @@ class QuoteController extends Controller
         ]);
 
         $customer = Customer::where('id', $request->customer_id)
-            ->where('user_id', Auth::id())
+            ->forOrg((int) $project->org_id)
             ->firstOrFail();
 
         $list = null;
@@ -699,11 +699,14 @@ class QuoteController extends Controller
             'items.*.notes' => 'nullable|string|max:65535',
         ]);
 
+        $quoteOrgId = (int) $quote->project()->value('org_id');
         $customer = Customer::where('id', $request->customer_id)
-            ->where(function ($q) use ($quote) {
-                $q->where('user_id', Auth::id());
+            ->where(function ($q) use ($quote, $quoteOrgId) {
+                $q->where('customers.org_id', $quoteOrgId);
                 if ($quote->customer_id !== null) {
-                    $q->orWhere('id', $quote->customer_id);
+                    $q->orWhere(function ($legacy) use ($quote) {
+                        $legacy->where('customers.id', $quote->customer_id)->whereNull('customers.org_id');
+                    });
                 }
             })
             ->firstOrFail();
@@ -785,8 +788,9 @@ class QuoteController extends Controller
     public function getCustomersForEstimate()
     {
         $this->requireEstimateLevel('R');
+        $orgId = CurrentOrg::id((int) Auth::id());
         $customers = Customer::query()
-            ->where('user_id', Auth::id())
+            ->where('customers.org_id', $orgId ?? 0)
             ->where('is_active', true)
             ->orderByRaw('COALESCE(NULLIF(company_name, \'\'), NULLIF(last_name, \'\'), NULLIF(first_name, \'\'), \'\') asc')
             ->get()

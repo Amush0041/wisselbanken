@@ -77,7 +77,7 @@ class ProjectWritePathsTest extends ProjectTestCase
 
     private function customerFor(User $u, int $id = 1): int
     {
-        DB::table('customers')->insert(['id' => $id, 'user_id' => $u->id, 'company_name' => "C$id", 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('customers')->insert(['id' => $id, 'user_id' => $u->id, 'org_id' => (int) DB::table('user_org_roles')->where('user_id', $u->id)->where('is_active', 1)->orderBy('id')->value('org_id'), 'company_name' => "C$id", 'created_at' => now(), 'updated_at' => now()]);
 
         return $id;
     }
@@ -681,13 +681,18 @@ class ProjectWritePathsTest extends ProjectTestCase
     }
 
     #[DataProvider('modes')]
-    public function test_quote_store_refuses_a_customer_that_is_not_the_callers(string $mode): void
+    public function test_quote_store_refuses_a_customer_of_another_org_and_accepts_a_teammates(string $mode): void
     {
         $this->setMode($mode);
-        $foreign = $this->customerFor($this->owner);
+        $foreign = $this->customerFor($this->outsider);
+        $mate = $this->customerFor($this->owner, 2);
         $before = DB::table('quotes')->count();
 
         $this->req($this->est, 'POST', "projects/{$this->p1}/quotes", ['customer_id' => $foreign])->assertNotFound();
+        $this->assertSame($before, DB::table('quotes')->count());
+        $this->req($this->est, 'POST', "projects/{$this->p1}/quotes", ['customer_id' => $mate])->assertOk();
+        $this->assertSame($before + 1, DB::table('quotes')->count());
+        $before = DB::table('quotes')->count();
         $this->req($this->est, 'POST', "projects/{$this->p1}/quotes", [])->assertStatus(422);
         $this->assertSame($before, DB::table('quotes')->count());
     }

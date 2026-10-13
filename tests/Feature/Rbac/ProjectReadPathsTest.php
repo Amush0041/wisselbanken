@@ -579,7 +579,7 @@ class ProjectReadPathsTest extends ProjectTestCase
     #[DataProvider('writeRoutes')]
     public function test_r7_a_project_member_with_the_level_can_write_a_teammates_quote(string $method, string $tpl): void
     {
-        DB::table('customers')->insert(['id' => 1, 'user_id' => $this->est->id, 'company_name' => 'ACME', 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('customers')->insert(['id' => 1, 'user_id' => $this->est->id, 'org_id' => (int) DB::table('user_org_roles')->where('user_id', $this->est->id)->where('is_active', 1)->orderBy('id')->value('org_id'), 'company_name' => 'ACME', 'created_at' => now(), 'updated_at' => now()]);
         foreach (['audit', 'enforce'] as $mode) {
             $this->setMode($mode);
             $this->item($this->q1, 10);
@@ -723,7 +723,7 @@ class ProjectReadPathsTest extends ProjectTestCase
 
     private function d18(): void
     {
-        DB::table('customers')->insert(['id' => 1, 'company_name' => 'ACME Corp', 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('customers')->insert(['id' => 1, 'org_id' => $this->orgA->id, 'company_name' => 'ACME Corp', 'created_at' => now(), 'updated_at' => now()]);
         DB::table('quotes')->where('id', $this->q1)->update([
             'staff_notes' => 'STAFF-ONLY', 'notes' => 'PUBLIC-NOTES', 'terms_and_conditions' => 'TERMS', 'customer_id' => 1,
             'customer_address' => '1 Customer Way', 'updated_at' => '2025-01-01 00:00:00',
