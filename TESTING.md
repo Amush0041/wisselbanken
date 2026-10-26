@@ -11,16 +11,16 @@ php artisan test                  # full suite
 Laravel scaffolding — not meaningful coverage, don't count them toward
 anything.
 
-## Known-failing baseline (updated 2026-09-26, after P2 cleanup)
+## Known-failing baseline (updated 2026-10-26, after client audit 2 Phase A and its verifier amendments)
 
-Full suite on in-memory sqlite (`DB_CONNECTION=sqlite DB_DATABASE=:memory: php artisan test`): **1150 passed / 4 failed** (1012 before the universal-admin work). The 4 failures are the 3 listed below plus `ExampleTest` (Laravel scaffold, "no such table: divisions"). Tests are PHPUnit-style classes (no Pest installed). The P2 additions are `AuditFindingsRound2Test` (guard over every mapped route, audit and enforce mode) and `P2CleanupBCTest`. Historical note follows: the RBAC suite was **682 passed / 3 failed** (Phase 5a rewrite plus the Phase 5 QA tests and amendment 3 round 2, 651 before round 2; Phase 4 baseline was 568 / 3). (The earlier
+Full suite on in-memory sqlite (`DB_CONNECTION=sqlite DB_DATABASE=:memory: php artisan test`): **1698 passed / 4 failed** (measured 2026-10-26 after the A1 amendment: the Verifier's 1650 of 2026-10-25 plus the 48 cases of `InviteInviterAuthorityTest`) (1409 passed / 4 failed on `release/1.1-prod` before client audit 2; 1150 / 4 at the P2 cleanup; 1012 before the universal-admin work). The 4 failures are the 3 listed below plus `ExampleTest` (Laravel scaffold, "no such table: divisions"). Tests are PHPUnit-style classes (no Pest installed). The P2 additions are `AuditFindingsRound2Test` (guard over every mapped route, audit and enforce mode) and `P2CleanupBCTest`. Historical note follows: the RBAC suite was **682 passed / 3 failed** (Phase 5a rewrite plus the Phase 5 QA tests and amendment 3 round 2, 651 before round 2; Phase 4 baseline was 568 / 3). (The earlier
 baseline of 55 passed / 3 failed, 113 assertions was measured **before** the
 projects work.) These 3 failures are pre-existing and independent of any feature work — do not report them as
 a regression you introduced, and do not treat a *new* failure as "probably
 one of the known ones" without checking it's actually one of these three by
 name:
 
-1. **`AuditMiddlewareTest::enforce mode blocks and logs`**
+1. **`AuditMiddlewareTest::enforce mode blocks and records blocked`**
    (`tests/Feature/Rbac/AuditMiddlewareTest.php:71`) — expects a 403 for a
    user with no org, actually gets a 302 redirect. Likely cause: the
    no-org path redirects (e.g. to an org-selection screen) rather than
@@ -67,6 +67,18 @@ into an unrelated PR by accident.
 - `ProjectTestCase` — shared base for the projects tests.
 - `PermissionServiceTest::test_project_scoping_requires_membership` — rewritten
   onto `projects` / `project_members.project_id`.
+
+## Client audit 2 (Phase A) tests
+
+- `RoleAssignmentGuardTest` - `assignRole` / `generateInvite` / invite acceptance: active members only, no Platform roles, no Seller roles in buyer orgs, universal-admin exceptions, the platform-admin screen still assigns anything.
+- `OrgDropdownRolesTest` - the Team, Overview and Roles dropdowns offer exactly the roles the server accepts.
+- `OwnershipDelegationMemberGuardTest` - ownership transfer and delegation only to active members; no account-existence hint on transfer.
+- `ExistingUserInviteTest` - existing accounts are invited, not attached; `invite/{token}/accept` (own verified e-mail only, one use, SoD, 404 for anyone else).
+- `PhaseARegressionTest` - 34 cases of regression pins for behaviour that must NOT change: Cross-Functional and Procurement roles still assignable, Seller roles still assignable in manufacturer orgs, SoD still applied inside `assign()`, the approval guard not blocking legitimate approvers, audit labels, the new-hire register link, transfer and delegation to legitimate members.
+- `InviteInviterAuthorityTest` - verifier amendment A1: `invite/{token}/accept` (review and accept) refuses an invite whose inviter is no longer an active member holding `user_management` F in the invite's org (removed, demoted, authority in another org, deleted, delegation ended), keeps it usable for a still-valid or universal-admin inviter, answers with the same 404 as an expired invite, and leaves the guest register link unchanged (audit and enforce).
+- `OrderSelfApprovalTest` - no approving or rejecting your own order while another approver exists (also via delegation); sole approver allowed and logged; the approvals list contract.
+- `AutoApprovalTest` - sole-approver orders are `processing` with an `auto_approved` row (checkout and RFQ convert, audit and enforce), audit-failure rollback, audit page labels, and the `orders:backfill-auto-approval` command.
+- Existing tests changed by this work: `P2CleanupBCTest` (2 asserts `pending` -> `processing`), `RfqProjectScopeTest` (1 assert and test name), `UniversalAdminTest::test_b_non_listed_owner_rules_are_unchanged` (the new owner is made a member of the org first), `AuditFindingsRound2Test::OPEN_ROUTES` (two invite-accept routes).
 
 ## RBAC test patterns
 

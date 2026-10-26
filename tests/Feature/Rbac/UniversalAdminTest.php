@@ -1076,6 +1076,7 @@ class UniversalAdminTest extends ProjectTestCase
         $this->req($adminC, 'POST', 'org-admin/settings/transfer', ['new_owner_email' => $this->est->email], $orgC->id)->assertForbidden();
         $this->assertNotNull(DB::table('organizations')->where('id', $orgC->id)->first());
 
+        $this->assignRole($this->est, $orgC, 'estimator');
         $this->req($ownerC, 'POST', 'org-admin/settings/transfer', ['new_owner_email' => $this->est->email], $orgC->id)->assertStatus(302);
         $this->assertSame(0, DB::table('user_org_roles')->where('org_id', $orgC->id)->where('user_id', $ownerC->id)->count(), 'the real owner still can');
     }

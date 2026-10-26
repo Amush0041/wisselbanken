@@ -237,6 +237,10 @@
                                     <span class="badge bg-label-info me-1">Platform admin</span>
                                 @elseif ($log->outcome === 'enforcement_changed')
                                     <span class="badge bg-label-secondary me-1">Setting changed</span>
+                                @elseif ($log->outcome === 'auto_approved')
+                                    <span class="badge bg-label-success me-1">Auto-approved</span>
+                                @elseif ($log->outcome === 'self_approved')
+                                    <span class="badge bg-label-success me-1">Self-approved (sole approver)</span>
                                 @else
                                     <span class="badge bg-label-secondary me-1">Logged</span>
                                 @endif

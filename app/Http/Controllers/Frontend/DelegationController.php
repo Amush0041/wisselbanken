@@ -80,6 +80,12 @@ class DelegationController extends Controller
             'expires_at' => ['required', 'date', 'after:starts_at'],
         ]);
 
+        abort_unless(
+            $this->assignments->isActiveMember((int) $data['to_user_id'], (int) $org->id),
+            403,
+            'Only active members of your organization can be delegates.'
+        );
+
         $this->delegations->grant(
             grantedBy: Auth::id(),
             fromUserId: Auth::id(),

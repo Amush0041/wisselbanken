@@ -23,9 +23,11 @@ use App\Models\Rbac\UserOrgRole;
 use App\Models\User;
 use App\Services\Rbac\PermissionService;
 use App\Services\Rbac\RoleAssignmentService;
+use App\Support\Rbac\UniversalAdmin;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
@@ -72,8 +74,8 @@ class OrgAdminController extends Controller
             return $user;
         });
 
-        // Release 1 roles available to assign (Phase 1 + Phase 2).
-        $roles = Role::whereIn('phase', ['P1', 'P2'])->orderBy('category')->orderBy('name')->get();
+        // Release 1 roles this organization may assign (Phase 1 + Phase 2).
+        $roles = $this->assignableRoles($org, orderByCategory: true);
 
         return view('user.org-admin.index', compact('org', 'members', 'roles'));
     }
@@ -92,6 +94,18 @@ class OrgAdminController extends Controller
             'role_id' => ['required', 'integer', Rule::exists('roles', 'id')],
         ]);
 
+        if (! $this->assignments->isActiveMember((int) $data['user_id'], (int) $org->id)) {
+            abort_unless(
+                UniversalAdmin::is((int) Auth::id()),
+                403,
+                'Only existing members of your organization can receive a role. Invite the person first.'
+            );
+            UniversalAdmin::recordBypass((int) Auth::id(), (int) $org->id, 'user_management', 'F', null, 'universal_assign_non_member');
+        }
+
+        $role = Role::findOrFail($data['role_id']);
+        $this->requireAssignableRole($role, $org);
+
         try {
             $result = $this->assignments->assign(
                 Auth::id(),
@@ -106,8 +120,6 @@ class OrgAdminController extends Controller
                 'message' => 'SoD conflict: this user already holds ' . implode(', ', $e->conflictingRoles) . '. These roles cannot coexist in the same organization.',
             ], 422);
         }
-
-        $role = Role::find($data['role_id']);
 
         return response()->json([
             'success' => true,
@@ -167,13 +179,7 @@ class OrgAdminController extends Controller
         }
         $this->requireOrgLevel($org, 'user_management', 'R');
 
-        $mfrOrgTypes = config('rbac.onboarding.manufacturer_org_types', ['manufacturer']);
-        $rolesQuery  = Role::whereIn('phase', ['P1', 'P2'])
-            ->where('category', '!=', 'Platform');   // Platform roles are internal; org owners never assign them
-        if (! in_array($org->org_type, $mfrOrgTypes, true)) {
-            $rolesQuery->where('category', '!=', 'Manufacturer/Seller');
-        }
-        $roles = $rolesQuery->orderBy('category')->orderBy('name')->get()
+        $roles = $this->assignableRoles($org, orderByCategory: true)
             ->sortBy(fn ($r) => ($r->category === 'Cross-Functional' ? 'zzz_' : '') . $r->category . '_' . $r->name)
             ->values();
 
@@ -305,7 +311,7 @@ class OrgAdminController extends Controller
         // Role coverage: all P1+P2 roles with assignment status in this org.
         $assignedRoleIds = UserOrgRole::where('org_id', $org->id)->where('is_active', true)
             ->pluck('role_id')->unique();
-        $allRoles = Role::whereIn('phase', ['P1', 'P2'])->orderBy('name')->get()->map(function ($role) use ($assignedRoleIds, $org) {
+        $allRoles = $this->assignableRoles($org)->map(function ($role) use ($assignedRoleIds, $org) {
             $assignees = UserOrgRole::with('user')
                 ->where('org_id', $org->id)
                 ->where('role_id', $role->id)
@@ -323,12 +329,7 @@ class OrgAdminController extends Controller
             ->limit(8)
             ->get();
 
-        $mfrOrgTypes  = config('rbac.onboarding.manufacturer_org_types', ['manufacturer']);
-        $inviteRolesQ = Role::whereIn('phase', ['P1', 'P2']);
-        if (! in_array($org->org_type, $mfrOrgTypes, true)) {
-            $inviteRolesQ->where('category', '!=', 'Manufacturer/Seller');
-        }
-        $roles = $inviteRolesQ->orderBy('category')->orderBy('name')->get();
+        $roles = $this->assignableRoles($org, orderByCategory: true);
 
         return view('user.org-admin.overview', compact('org', 'stats', 'allRoles', 'recentActivity', 'roles'));
     }
@@ -423,40 +424,12 @@ class OrgAdminController extends Controller
             'email'      => ['required', 'email', 'max:255'],
             'name'       => ['required', 'string', 'max:255'],
             'role_id'    => ['required', 'integer', 'exists:roles,id'],
-            'confirmed'  => ['sometimes', 'boolean'],
         ]);
 
-        // Existing account path — require explicit confirmation before assigning
-        $existing = User::where('email', $data['email'])->first();
-        if ($existing) {
-            $role = Role::find($data['role_id']);
+        $this->requireAssignableRole(Role::findOrFail($data['role_id']), $org);
 
-            if (empty($data['confirmed'])) {
-                // First hit: tell the front-end who we found so it can ask the user to confirm
-                return response()->json([
-                    'type'      => 'confirm_existing',
-                    'user_name' => $existing->name,
-                    'role_name' => $role?->name,
-                ]);
-            }
-
-            // Second hit (confirmed: true): actually assign
-            try {
-                $this->assignments->assign(
-                    Auth::id(),
-                    $existing->id,
-                    $org->id,
-                    (int) $data['role_id'],
-                );
-            } catch (\Exception $e) {
-                return response()->json(['error' => $e->getMessage()], 422);
-            }
-
-            return response()->json([
-                'type'    => 'existing',
-                'message' => $existing->name . ' has been added to your org as ' . $role?->name . '.',
-            ]);
-        }
+        // An existing account is never given the role directly: it is invited like anyone else and accepts while signed in.
+        $existingAccount = User::where('email', $data['email'])->exists();
 
         // Revoke any prior unused invite for the same email + org
         OrgInvite::where('email', $data['email'])->where('org_id', $org->id)->whereNull('used_at')->delete();
@@ -476,7 +449,7 @@ class OrgAdminController extends Controller
         $emailSent = false;
         if ($request->boolean('send_email', true)) {
             try {
-                Mail::to($invite->email, $invite->name)->send(new OrgInviteMail($invite));
+                Mail::to($invite->email, $invite->name)->send(new OrgInviteMail($invite, $existingAccount));
                 $emailSent = true;
             } catch (\Exception) {
                 // Mail failure is non-fatal — caller still gets the link to share manually.
@@ -486,7 +459,9 @@ class OrgAdminController extends Controller
         return response()->json([
             'type'       => 'invite',
             'email_sent' => $emailSent,
-            'link'       => url('/register/invite/' . $invite->token),
+            'link'       => $existingAccount
+                ? url('/invite/' . $invite->token . '/accept')
+                : url('/register/invite/' . $invite->token),
         ]);
     }
 
@@ -669,6 +644,34 @@ class OrgAdminController extends Controller
             403,
             $message
         );
+    }
+
+    private function assignableRoles(Organization $org, bool $orderByCategory = false): Collection
+    {
+        $query = Role::whereIn('phase', ['P1', 'P2']);
+        if ($orderByCategory) {
+            $query->orderBy('category');
+        }
+
+        return $query->orderBy('name')->get()
+            ->filter(fn (Role $role) => $this->assignments->isAssignableByOrg($role, $org->org_type))
+            ->values();
+    }
+
+    private function requireAssignableRole(Role $role, Organization $org): void
+    {
+        if ($this->assignments->isAssignableByOrg($role, $org->org_type)) {
+            return;
+        }
+
+        abort_unless(
+            UniversalAdmin::is((int) Auth::id()),
+            403,
+            $role->category === 'Platform'
+                ? 'Platform roles can only be assigned by a platform administrator.'
+                : 'Seller roles can only be assigned in manufacturer or distributor organizations.'
+        );
+        UniversalAdmin::recordBypass((int) Auth::id(), (int) $org->id, 'user_management', 'F', null, 'universal_assign_restricted_role');
     }
 
     private function requireProjectFull(Project $project, Organization $org): void

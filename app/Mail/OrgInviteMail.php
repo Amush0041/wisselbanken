@@ -18,10 +18,14 @@ class OrgInviteMail extends Mailable
     public string $inviterName;
     public string $roleName;
     public string $recipientName;
+    public bool $existingAccount;
 
-    public function __construct(OrgInvite $invite)
+    public function __construct(OrgInvite $invite, bool $existingAccount = false)
     {
-        $this->inviteUrl     = url('/register/invite/' . $invite->token);
+        $this->existingAccount = $existingAccount;
+        $this->inviteUrl     = $existingAccount
+            ? url('/invite/' . $invite->token . '/accept')
+            : url('/register/invite/' . $invite->token);
         $this->orgName       = $invite->organization?->name ?? 'your organisation';
         $this->inviterName   = $invite->invitedBy?->name ?? 'A team member';
         $this->roleName      = $invite->role?->name ?? 'team member';

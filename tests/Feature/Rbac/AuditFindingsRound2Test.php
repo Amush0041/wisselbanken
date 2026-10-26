@@ -430,6 +430,8 @@ class AuditFindingsRound2Test extends ProjectTestCase
         'GET user-dashboard' => 'landing page for any org member; lists only the caller\'s own data',
         'GET workspace' => 'static workspace view for any org member',
         'POST org/switch' => 'switches between orgs the caller already belongs to (membership is verified)',
+        'GET invite/{token}/accept' => 'invitee-only: the invite token must carry the caller\'s own verified e-mail; the caller has no org membership yet, so no org permission applies',
+        'POST invite/{token}/accept' => 'invitee-only: the invite token must carry the caller\'s own verified e-mail; assignment goes through RoleAssignmentService (SoD applies)',
         'GET org-admin/my-roles' => 'self-scope: caller\'s own roles and delegations',
         'GET get-list-count' => 'navbar badge on every page; caller\'s own list count',
         'GET profile' => 'caller\'s own profile',

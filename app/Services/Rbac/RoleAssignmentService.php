@@ -3,6 +3,7 @@
 namespace App\Services\Rbac;
 
 use App\Exceptions\Rbac\SodConflictException;
+use App\Models\Rbac\Role;
 use App\Models\Rbac\RoleAssignmentLog;
 use App\Models\Rbac\UserOrgRole;
 
@@ -114,5 +115,26 @@ class RoleAssignmentService
             ->where('role_id', $roleId)
             ->where('is_active', true)
             ->exists();
+    }
+
+    public function isActiveMember(int $userId, int $orgId): bool
+    {
+        return UserOrgRole::where('user_id', $userId)
+            ->where('org_id', $orgId)
+            ->where('is_active', true)
+            ->exists();
+    }
+
+    public function isAssignableByOrg(Role $role, ?string $orgType): bool
+    {
+        if ($role->category === 'Platform') {
+            return false;
+        }
+
+        if ($role->category === 'Manufacturer/Seller') {
+            return in_array($orgType, config('rbac.onboarding.manufacturer_org_types', ['manufacturer']), true);
+        }
+
+        return true;
     }
 }

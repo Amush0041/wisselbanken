@@ -548,7 +548,7 @@ class P2CleanupBCTest extends ProjectTestCase
 
         $order = DB::table('orders')->first();
         $r->assertRedirect(route('checkout.success', ['order' => $order->order_number]));
-        $this->assertSame('pending', $order->status);
+        $this->assertSame('processing', $order->status);
         $this->assertSame(1, $this->rows('order_items'));
         $this->assertSame(0, DB::table('palletes')->where('user_id', $this->procMgr->id)->count());
     }
@@ -722,7 +722,7 @@ class P2CleanupBCTest extends ProjectTestCase
 
         $this->actingAs($this->procMgr)->post(route('rfq.convert', $rfq))->assertRedirect();
 
-        $this->assertSame('pending', DB::table('orders')->value('status'));
+        $this->assertSame('processing', DB::table('orders')->value('status'));
         $this->assertSame('converted', DB::table('rfq_requests')->where('id', $rfq)->value('status'));
     }
 

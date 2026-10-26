@@ -245,7 +245,7 @@ class RfqProjectScopeTest extends ProjectTestCase
     // ---- G1: approval routing on convert -----------------------------------------
 
     #[DataProvider('modes')]
-    public function test_g1_sole_approver_requester_gets_an_auto_approved_pending_order(string $mode): void
+    public function test_g1_sole_approver_requester_gets_an_auto_approved_order(string $mode): void
     {
         $this->setMode($mode);
         $this->assertSame([$this->procMgr->id], (new ApprovalRoutingService)->approverPool($this->orgA->id));
@@ -255,7 +255,7 @@ class RfqProjectScopeTest extends ProjectTestCase
 
         $order = DB::table('orders')->first();
         $r->assertRedirect(route('order.details', $order->id));
-        $this->assertSame('pending', $order->status);
+        $this->assertSame('processing', $order->status);
         $this->assertSame($this->orgA->id, (int) $order->org_id);
         $this->assertSame($this->procMgr->id, (int) $order->user_id);
         $this->assertSame('converted', DB::table('rfq_requests')->where('id', $rfq)->value('status'));

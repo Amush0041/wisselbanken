@@ -2,6 +2,8 @@
 
 namespace App\Services\Rbac;
 
+use App\Models\Order;
+use App\Models\Rbac\AuditLog;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -22,6 +24,8 @@ class ApprovalRoutingService
      */
     private const APPROVAL_GROUP = 'approval_authority';
     private const APPROVAL_LEVEL = 'A';
+
+    public const AUTO_APPROVAL_NOTE = 'Auto-approved: you are the only approver in your organization.';
 
     /**
      * Decide how a submitted purchase request should be routed.
@@ -50,6 +54,47 @@ class ApprovalRoutingService
 
         // Requester is not an approver → route to the whole pool normally.
         return ['auto_approve' => false, 'approver_ids' => array_values($approverPool)];
+    }
+
+    /**
+     * Initial order columns for a routed submission. An auto-approved order is approved by its requester,
+     * the same end state OrderApprovalController::approve produces.
+     *
+     * @param  array{auto_approve: bool, approver_ids: array<int, int>}  $routing
+     * @return array{status: string, approved_by?: int, approval_note?: string}
+     */
+    public function initialOrderState(array $routing, int $requesterId): array
+    {
+        if ($routing['auto_approve']) {
+            return ['status' => 'processing', 'approved_by' => $requesterId, 'approval_note' => self::AUTO_APPROVAL_NOTE];
+        }
+
+        return ['status' => 'pending_approval'];
+    }
+
+    public function recordAutoApproval(Order $order): void
+    {
+        AuditLog::event(
+            'auto_approved',
+            (int) $order->user_id,
+            (int) $order->org_id,
+            self::APPROVAL_GROUP,
+            self::APPROVAL_LEVEL,
+            'sole_approver order ' . $order->order_number,
+        );
+    }
+
+    /**
+     * Approvers who could decide the submitter's order in their place: the pool minus the submitter.
+     *
+     * @return array<int, int>
+     */
+    public function otherApprovers(int $orgId, int $submitterId): array
+    {
+        return array_values(array_filter(
+            $this->approverPool($orgId),
+            fn (int $id) => $id !== $submitterId,
+        ));
     }
 
     /**

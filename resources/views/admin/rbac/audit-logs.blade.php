@@ -31,6 +31,8 @@
                         <option value="blocked" @selected(request('outcome')==='blocked')>Blocked (enforce mode)</option>
                         <option value="enforcement_changed" @selected(request('outcome')==='enforcement_changed')>Setting changed</option>
                         <option value="allowed_universal_admin" @selected(request('outcome')==='allowed_universal_admin')>Allowed (platform admin)</option>
+                        <option value="auto_approved" @selected(request('outcome')==='auto_approved')>Auto-approved</option>
+                        <option value="self_approved" @selected(request('outcome')==='self_approved')>Self-approved (sole approver)</option>
                     </select>
                 </div>
                 <div class="col-md-4">
@@ -115,6 +117,10 @@
                                         <span class="badge bg-info">Platform admin</span>
                                     @elseif ($log->outcome === 'enforcement_changed')
                                         <span class="badge bg-secondary">Setting changed</span>
+                                    @elseif ($log->outcome === 'auto_approved')
+                                        <span class="badge bg-success">Auto-approved</span>
+                                    @elseif ($log->outcome === 'self_approved')
+                                        <span class="badge bg-success">Self-approved (sole approver)</span>
                                     @else
                                         <span class="badge bg-warning text-dark">Would Block</span>
                                     @endif

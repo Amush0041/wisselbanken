@@ -245,6 +245,7 @@
                             <th class="py-3 small">Route Accessed</th>
                             <th class="py-3 small">Permission Required</th>
                             <th class="py-3 small">Outcome</th>
+                            <th class="py-3 small">Details</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -273,14 +274,21 @@
                                         <span class="badge bg-label-secondary" style="font-size:.65rem">Setting changed</span>
                                     @elseif ($entry->outcome === 'would_block')
                                         <span class="badge bg-label-danger" style="font-size:.65rem">Would Block</span>
+                                    @elseif ($entry->outcome === 'auto_approved')
+                                        <span class="badge bg-label-success" style="font-size:.65rem">Auto-approved</span>
+                                    @elseif ($entry->outcome === 'self_approved')
+                                        <span class="badge bg-label-success" style="font-size:.65rem">Self-approved (sole approver)</span>
                                     @else
                                         <span class="badge bg-label-secondary" style="font-size:.65rem">{{ $entry->outcome }}</span>
                                     @endif
                                 </td>
+                                <td class="py-3">
+                                    <small class="text-muted">{{ $entry->reason ? str_replace('_', ' ', $entry->reason) : '—' }}</small>
+                                </td>
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="5" class="text-center py-5">
+                                <td colspan="6" class="text-center py-5">
                                     <i class="ti ti-shield-check fs-2 text-muted d-block mb-2"></i>
                                     <p class="text-muted mb-0">No enforcement events recorded for this organisation</p>
                                 </td>

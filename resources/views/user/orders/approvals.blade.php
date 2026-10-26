@@ -50,6 +50,7 @@
                     </thead>
                     <tbody>
                         @foreach($pendingOrders as $order)
+                        @php $awaiting = in_array($order->id, $awaitingOthers ?? []); @endphp
                         <tr>
                             <td>{{ $order->order_number }}</td>
                             <td>{{ $order->user?->name ?? '—' }}</td>
@@ -58,6 +59,9 @@
                             <td>{{ $order->items->count() }}</td>
                             <td>${{ number_format($order->total, 2) }}</td>
                             <td>
+                                @if ($awaiting)
+                                <span class="text-muted small">Awaiting another approver</span>
+                                @else
                                 <div class="d-flex gap-2">
                                     <button
                                         type="button"
@@ -74,9 +78,11 @@
                                         <i class="ti ti-x me-1"></i>Reject
                                     </button>
                                 </div>
+                                @endif
                             </td>
                         </tr>
 
+                        @unless ($awaiting)
                         {{-- Approve modal --}}
                         <div class="modal fade" id="approveModal{{ $order->id }}" tabindex="-1">
                             <div class="modal-dialog">
@@ -136,6 +142,7 @@
                                 </div>
                             </div>
                         </div>
+                        @endunless
                         @endforeach
                     </tbody>
                 </table>

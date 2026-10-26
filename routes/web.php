@@ -119,6 +119,10 @@ Route::group(['middleware' => ['auth','verified','checkRole:user']], function() 
     /* Org Switcher — changes the current_org session key */
     Route::post('org/switch', [\App\Http\Controllers\Frontend\OrgSwitchController::class, 'switch'])->name('org.switch');
 
+    /* Accepting an org invite with an existing account — signed in, verified e-mail must equal the invited address */
+    Route::get('invite/{token}/accept', [\App\Http\Controllers\Auth\InviteAcceptController::class, 'show'])->name('invite.review');
+    Route::post('invite/{token}/accept', [\App\Http\Controllers\Auth\InviteAcceptController::class, 'accept'])->name('invite.accept');
+
     /* RBAC org-admin — Overview, Team, Roles, Audit Log, Settings, Delegations, API Tokens */
     Route::get('org-admin', [\App\Http\Controllers\Frontend\OrgAdminController::class, 'index'])->name('org-admin.index');
     Route::get('org-admin/overview', [\App\Http\Controllers\Frontend\OrgAdminController::class, 'overview'])->name('org-admin.overview');

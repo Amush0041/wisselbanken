@@ -31,6 +31,11 @@
                             <strong>{{ $orgName }}</strong> on Wisselbanken as
                             <strong>{{ $roleName }}</strong>.
                         </p>
+                        @if ($existingAccount)
+                            <p style="margin:0 0 24px;font-size:15px;color:#555;line-height:1.6;">
+                                You already have a Wisselbanken account with this email address. Sign in with it to review and accept the invitation.
+                            </p>
+                        @endif
 
                         {{-- CTA button --}}
                         <table width="100%" cellpadding="0" cellspacing="0">
@@ -38,7 +43,7 @@
                                 <td align="center" style="padding:8px 0 28px;">
                                     <a href="{{ $inviteUrl }}"
                                        style="display:inline-block;background:#6b1c1c;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;padding:14px 36px;border-radius:7px;letter-spacing:-.1px;">
-                                        Accept invitation
+                                        {{ $existingAccount ? 'Sign in to accept' : 'Accept invitation' }}
                                     </a>
                                 </td>
                             </tr>

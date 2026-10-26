@@ -205,11 +205,13 @@ class CheckoutController extends Controller
 
             // Determine order status via approval routing (plan §6.2).
             // Solo operators auto-approve; multi-approver orgs route to the pool.
-            $initialStatus = 'pending';
+            $orderState = ['status' => 'pending'];
+            $routing = null;
             if (Auth::check()) {
                 $orgId = CurrentOrg::sessionOrg((int) Auth::id());
                 if ($orgId) {
-                    $routing = app(ApprovalRoutingService::class)->route((int) $orgId, Auth::id());
+                    $approvals = app(ApprovalRoutingService::class);
+                    $routing = $approvals->route((int) $orgId, Auth::id());
                     if (! $routing['auto_approve'] && empty($routing['approver_ids'])) {
                         DB::rollBack();
                         $noApprover = 'Your organization has no one who can approve orders. Ask an organization owner to assign an Executive Approver (or another role with approval authority), then try again.';
@@ -218,9 +220,10 @@ class CheckoutController extends Controller
                             ? response()->json(['message' => $noApprover], 422)
                             : redirect()->back()->withInput()->with('error', $noApprover);
                     }
-                    $initialStatus = $routing['auto_approve'] ? 'pending' : 'pending_approval';
+                    $orderState = $approvals->initialOrderState($routing, (int) Auth::id());
                 }
             }
+            $initialStatus = $orderState['status'];
 
             // Create order with calculated values
             $order = Order::create([
@@ -239,12 +242,15 @@ class CheckoutController extends Controller
                 'postcode' => $request->postcode,
                 'notes' => $request->notes,
                 'payment_method' => $request->payment_method ?? 'cod',
-                'status' => $initialStatus,
                 'subtotal' => $subtotal,
                 'tax' => $tax,
                 'tax_rate' => $taxRate,
                 'total' => $total,
-            ]);
+            ] + $orderState);
+
+            if ($routing !== null && $routing['auto_approve']) {
+                $approvals->recordAutoApproval($order);
+            }
 
             // Add order items
             foreach ($palletItems as $item) {

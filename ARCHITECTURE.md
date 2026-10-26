@@ -145,6 +145,13 @@ A failed check is written to `rbac_audit_logs` (`outcome` = `would_block` or
   if the middleware wrote no row (unmapped route or integrity abort) it inserts
   one with `reason = controller_denied`. So Blocked = a real refusal; Would Block
   = only the middleware would have refused. Responses are unchanged.
+- **Outcome values in `rbac_audit_logs.outcome`** (free text, no migration):
+  `would_block`, `blocked`, `allowed_universal_admin`, `enforcement_changed`, and
+  the business events written by `AuditLog::event()`: `auto_approved` (reason
+  `sole_approver order ORD-x`, or `sole_approver_backfill order ORD-x` from the
+  backfill command) and `self_approved` (reason `sole_approver_self_approval order ORD-x`).
+  Both admin audit pages and the org Enforcement tab have an explicit label for
+  each; an unknown outcome shows its raw value.
 - Local `.env` says `RBAC_MODE=enforce` and `RBAC_ENFORCE_BATCHES=admin,read,write,approve`.
   Production is reported to be in enforce mode; this cannot be verified from
   the repository.
@@ -182,8 +189,10 @@ level check): `POST logout`, `GET/POST password/confirm`, `GET email/verify`,
 `POST email/resend`, `GET register-complete`, `GET user-dashboard`,
 `GET workspace`, `POST org/switch` (membership is verified),
 `GET org-admin/my-roles` (self-scope only), `GET get-list-count` (navbar
-badge), `GET profile`, `PUT profile`. Public and guest routes (catalog,
-pallet, login, invite) are outside the guard.
+badge), `GET profile`, `PUT profile`, `GET invite/{token}/accept` and
+`POST invite/{token}/accept` (invitee-only, section 4.5). Public and guest
+routes (catalog, pallet, login, register, `register/invite/{token}`) are
+outside the guard.
 
 **Accepted behaviours, documented in that test (not bugs to fix silently):**
 
@@ -201,6 +210,66 @@ pallet, login, invite) are outside the guard.
    answers 404 instead of 403. Still a denial; nothing is written.
 3. `GET org-admin/projects` now requires `project_management` R (403 below).
 4. Ordinary-browser denials in enforce mode are 302 redirects, not 403.
+
+### 4.5 Who may receive which role (client audit 2, Phase A)
+
+All of this is enforced in the controllers (so it holds in audit mode too) and
+leaves `RoleAssignmentService::assign()` untouched: the platform-admin screen,
+invite acceptance, delegation and onboarding still call it directly.
+
+- **Membership.** `RoleAssignmentService::isActiveMember($userId, $orgId)` is
+  true when the user has an active `user_org_roles` row in that org. A user whose
+  rows there are all inactive (removed) is not a member and must be invited
+  again. `OrgAdminController::assignRole` refuses non-members (403 "Only existing
+  members of your organization can receive a role. Invite the person first.").
+  `OrgSettingsController::transferOwnership` refuses a new owner who is not an
+  active member, with the same 403 for an unknown e-mail (no account-existence
+  hint; the old `exists:users,email` validation is gone). `DelegationController::store`
+  refuses a delegate who is not an active member.
+- **Role categories.** `RoleAssignmentService::isAssignableByOrg($role, $orgType)`:
+  Platform roles are never assignable from an org screen; Manufacturer/Seller
+  roles only in orgs whose type is in `config('rbac.onboarding.manufacturer_org_types')`
+  (manufacturer, distributor_stocking, distributor_non_stocking); every other
+  category is allowed. The same rule feeds the server checks (`assignRole`,
+  `generateInvite`, invite acceptance) and the role dropdowns on the Team,
+  Overview and Roles pages. The P1/P2 phase filter stays a UI-only filter. The
+  platform-admin routes (`Admin\RbacController`) are not restricted, and an org
+  owner can still remove a stray Platform assignment. A rep agency
+  (`manufacturer_s_rep_sales_agency`) is not in that config list, so it cannot
+  assign Sales Rep to its own staff (see section 11).
+- **Invites.** `POST org-admin/invite` never assigns directly any more. Every
+  e-mail, new or already registered, gets an `org_invites` row (7 days, one use)
+  and the same JSON answer (`type: invite`, `email_sent`, `link`; no account
+  name). A new e-mail gets the register link; an existing account gets
+  `/invite/{token}/accept` and a mail variant that asks it to sign in.
+  `Auth\InviteAcceptController` (`GET/POST invite/{token}/accept`, behind
+  `auth`, `verified`, `checkRole:user`; not in the route map, listed as open in
+  the guard test because the invitee has no membership yet): the signed-in
+  user's verified e-mail must equal the invite e-mail (compared case- and
+  space-insensitively) or the answer is 404; a used, expired or no longer
+  assignable invite is also a 404 (with the "invite invalid" page); the role is
+  assigned through `RoleAssignmentService::assign` (SoD still applies; a conflict
+  sends the user back to the review page and leaves the invite unused); the
+  invite is claimed with a conditional `used_at` update in the same transaction
+  as the assignment. At review and at accept the inviter must also still be an
+  active member of the invite's org and still pass `user_management` F there
+  (judged live on `invite.org_id`, never on the invitee's session org), or be a
+  universal admin (`UniversalAdmin::is`: listed and verified; no extra audit row
+  at accept); otherwise the invite is the same 404 "invite invalid" page as an
+  expired one, and a current admin re-invites. The guest path
+  `Auth\InviteController::register` treats an invite whose role is no longer
+  assignable as invalid; it does not check the inviter (section 12 item 13).
+- **Universal admin** (section 10b) may still assign to non-members, hand
+  ownership to an existing non-member and assign restricted roles from the org
+  screens; each is logged (`universal_assign_non_member`,
+  `universal_transfer_non_member`, `universal_assign_restricted_role`). There
+  is no exemption for delegations to non-members or for a universal admin
+  accepting an invite as the INVITEE (the verified-e-mail match still applies).
+  Separately, an invite CREATED by a listed, verified universal admin stays
+  valid at accept without the inviter holding a role in the org.
+- **Audit helper.** `AuditLog::event($outcome, $userId, $orgId, $group, $level, $reason, $method?, $routeUri?)`
+  writes a business-event row to `rbac_audit_logs` (method and route from the
+  request, `CLI` / `artisan <name>` outside a request). It is not fail-soft.
 
 ## 5. Quote (estimate) visibility
 
@@ -255,7 +324,12 @@ Seller routes (`RfqSellerController`): incoming R, respond S, decline S.
   or no selected response (this prevents a double conversion). Then
   `ApprovalRoutingService::route($orgId, $requesterId)` decides:
   - the requester is the **sole** user with `approval_authority` A or F in the
-    org: `auto_approve`, order status `pending`;
+    org: `auto_approve`; the order is created already approved: status
+    `processing`, `approved_by` = the requester, `approval_note` "Auto-approved:
+    you are the only approver in your organization.", and one `rbac_audit_logs`
+    row with outcome `auto_approved` (written inside the order transaction, so an
+    audit failure rolls the order back). Before client audit 2 this case was
+    created as status `pending`, which nothing ever moved on;
   - other approvers exist (the requester, if one, is removed from the list):
     order status `pending_approval`;
   - **no approver at all**: the conversion is **refused**, nothing is written
@@ -266,7 +340,25 @@ Seller routes (`RfqSellerController`): incoming R, respond S, decline S.
   Checkout (`CheckoutController`) follows the same routing and the same refusal.
 - Approving or rejecting an order needs `approval_authority` A
   (`OrderApprovalController`); approve sets status `processing`, reject sets
-  `cancelled`.
+  `cancelled`. **Self-approval guard:** an approver cannot approve or reject
+  their own order (or the order of the principal they act for as a delegate)
+  while another approver exists (403 "You cannot approve|reject your own order
+  while another approver is available."). The approver pool is distinct users,
+  so one person with several approver roles is still one approver
+  (`ApprovalRoutingService::otherApprovers` = pool minus the submitter). When the
+  submitter is the only approver they may decide the order themselves, and an
+  approve is logged as `self_approved` (reject is not logged). Universal admins
+  get no exemption. The approvals list shows "Awaiting another approver" instead
+  of the buttons for those orders (`$awaitingOthers`).
+- **Stuck `pending` orders.** `php artisan orders:backfill-auto-approval {--dry-run} {--force}`
+  (`app/Console/Commands/BackfillAutoApprovedOrders.php`) approves orders left
+  in status `pending` with an org by the old behaviour: it selects `status =
+  pending`, `org_id` not null, `approved_by` and `rejected_by` null, `user_id`
+  not null, and per order (own transaction) sets `processing`, `approved_by =
+  user_id`, the same note, and writes an `auto_approved` row with reason
+  `sole_approver_backfill order <no>` (method `CLI`). Orders with `org_id` NULL
+  are never selected. Idempotent; a real run in production needs `--force`;
+  reports go to `storage/app/backfill/orders-auto-approval/<timestamp>/`.
 - The dashboard "pending RFQs" panel (`UserWorkspaceController`) shows RFQs
   in status `sent` or `closed` (not yet converted) for users with
   `quote_rfq_management` S, restricted to NULL-project or visible-project RFQs.
@@ -335,8 +427,9 @@ after the real run: it must report nothing left to do.
 - **Where the bypass lives**: `PermissionService::checkPermission` and `Project::scopeVisibleTo` (permission and project visibility), `CurrentOrg` / session org resolution, `OrgSwitchController` (a listed user may switch into any org), and `CheckRole`, which admits listed ids to the `/admin` panel.
 - **Audit**: every bypass writes an `rbac_audit_logs` row with outcome `allowed_universal_admin` (deduplicated per request) and a line in the never-pruned `universal-admin-*.log` channel. A failure of either write is caught and falls back to `Log::error`; the bypass decision stays true.
 - **Lifted for listed users only** (each logged as `allowed_universal_admin` with reason `universal_org_delete`, `universal_ownership_transfer`, `universal_delegation_revoke`, `universal_api_token_revoke`): org delete and ownership transfer without being the owner (transfer replaces the sitting owners), revoking another user's delegation (same org) or API token (token owner is a member of the current org), and a quote's `staff_notes` visible to non-authors. Org delete wipes the org's `rbac_audit_logs` rows, so its trail survives in the `universal-admin` log file only. Everyone else keeps owner-only and own-record rules.
-- **Unchanged**: SoD, seller-never-sees-buyer-project scoping, personal data scoped by `user_id` (carts, pallets, saved lists; customers are org data, see 10c), approval business rules; a listed user is not in any approver pool; delegation is not transitive; users not on the list behave exactly as before.
-- **UI**: listed users see 'Platform admin panel' and 'Enforcement mode' links in the user navbar (`$navUniversalAdmin`). The org audit-log Enforcement tab labels rows by stored outcome (Blocked / Would Block / Platform admin) and its banner reflects the real `rbac_mode` and `rbac.enforce_batches`.
+- **Role assignment (client audit 2)**: a listed user may assign a role to a non-member, hand ownership to an existing non-member, and assign Platform or Seller roles from the org screens; logged with reasons `universal_assign_non_member`, `universal_transfer_non_member`, `universal_assign_restricted_role` (section 4.5). Not lifted: delegating to a non-member, accepting someone else's invite (that is about the INVITEE accepting). Separately, an invite created by a listed, verified user stays valid at accept without the inviter holding a role in the org, while they are listed and verified (section 4.5).
+- **Unchanged**: SoD, seller-never-sees-buyer-project scoping, personal data scoped by `user_id` (carts, pallets, saved lists; customers are org data, see 10c), approval business rules (including the self-approval guard of section 7: a listed user cannot approve their own order while another approver exists); a listed user is not in any approver pool; delegation is not transitive; users not on the list behave exactly as before.
+- **UI**: listed users see 'Platform admin panel' and 'Enforcement mode' links in the user navbar (`$navUniversalAdmin`). The org audit-log Enforcement tab labels rows by stored outcome (Blocked / Would Block / Platform admin / Auto-approved / Self-approved (sole approver)), shows the row's `reason` in a Details column (underscores as spaces), and its banner reflects the real `rbac_mode` and `rbac.enforce_batches`.
 - **Deviation**: this departs from plan section 3.4 (no role outside `user_org_roles`) and needs the client's written acknowledgement.
 
 ## 11. Known dead code
@@ -361,10 +454,112 @@ assume rep-agency seller authorization is enforced until this is fixed.
    Decision pending.
 4. **MariaDB-only behaviour not proven by tests** (the tests run on in-memory
    sqlite): the concurrent-enrol race, `lockForUpdate` semantics, the
-   `quotes.user_id` cascade behaviour.
+   `quotes.user_id` cascade behaviour, two simultaneous accepts of one invite
+   (the claim is a conditional `UPDATE ... WHERE used_at IS NULL`; the
+   inviter-authority check runs before the claim transaction, so a removal in
+   the same milliseconds is not caught), `orders:backfill-auto-approval` on a
+   restored production backup, and an order whose `user_id` has no matching
+   user (`orders.user_id` has no FK, while `orders.approved_by` and
+   `rbac_audit_logs.user_id` do: the command reports that order as `failed`,
+   exits 1, and the other orders are still approved).
 5. Phase 5b tightening (section 9) and the backfill command removal.
+6. **Global role and permission editing** (Verifier C1, CRITICAL, pre-existing).
+   `OrgAdminController::updateRolePermission` (`PUT org-admin/roles-list/permissions`)
+   and `storeRole` (`POST org-admin/roles-list/create`) are reachable by every
+   `user_management` F holder (Organization Owner, Organization Admin,
+   Estimator, Manufacturer Admin). Roles and `role_permissions` are global: any
+   of them can change the levels of any role in every organization and create
+   roles of any category (an Owner can mint a role with `system_administration`
+   F and assign it to themselves through the normal Team page, because the
+   category is not Platform), and one tenant can change another tenant's
+   approver pool. `updateRolePermission` does not call `PermissionMatrix::flush()`,
+   so `checkPermission` (cached) and `approverPool` (table read) disagree until
+   the cache expires. Decision pending with the human; not fixed by client audit 2
+   Phase A.
+7. **Stale-session approvals** (Verifier C2, HIGH, pre-existing).
+   `OrderApprovalController::index` (:25) and `authorizeApprovalAction` (:88),
+   and `CheckoutController` (:211, :231), compare the order's org with
+   `CurrentOrg::sessionOrg()` (the raw session value for non-universal admins)
+   while the permission check uses `CurrentOrg::id()` (falls back to the first
+   active org when the session org is no longer valid). A removed member with a
+   stale session who holds an approver role in another org can list, approve and
+   reject the old org's orders, and place an order into it (never
+   auto-approved), until the session ends. Decision pending with the human; not
+   fixed by client audit 2 Phase A.
+8. **Invited new hires are never marked verified** (Verifier C3, pre-existing).
+   `Auth\InviteController::register` passes `email_verified_at => now()` but the
+   column is not in `User::$fillable` (app/Models/User.php:34-41), so the
+   account is created unverified, no `Registered` event fires, no verification
+   mail is sent, and the user sits behind the `verified` middleware until they
+   use "resend". An invited approver counts in `approverPool` but cannot reach
+   the approvals page. **Do not fix this with `forceFill` or by adding the
+   column to `$fillable`.** The inviter receives the register link, so the
+   inviter (or anyone holding it) could register the address with a password of
+   their choosing and own a verified account for a mailbox they do not control;
+   that defeats the verified-e-mail-equals-invite-e-mail binding of the accept
+   route and satisfies the verified-e-mail condition of `UniversalAdmin::is`. The
+   safe fix is to fire the normal verification notification and leave the
+   address unverified until the mailbox owner clicks it. Today's accidental NULL
+   is the safe behaviour. Decision pending with the human; not fixed by client
+   audit 2 Phase A.
+9. **Delegation deadlock between exactly two approvers** (Verifier B4). With
+   pool = {P, D} and an active delegation P -> D, P is blocked by the
+   self-approval guard and D is treated as P (`selfIds` includes the principal)
+   and gets the misleading "You cannot approve your own order ..." for P's
+   order. Needs exactly two approvers; ends on revoke or expiry. Options:
+   accept and document, or count a delegate who is an approver in his own right
+   as "another approver". Decision pending with the human; not fixed by client
+   audit 2 Phase A.
+10. **An Owner can strip other approvers and become the sole approver**
+    (Verifier B1). The Owner role holds `approval_authority` A and
+    `user_management` F, so the Owner can deactivate the other approvers
+    (`DELETE org-admin/roles/{userOrgRole}`), then approve their own order
+    (logged `self_approved` / `auto_approved`). Same power as before the guard;
+    the guard is only as strong as the approver roster. Options: accept
+    (logged), refuse removing the last other approver while orders await
+    approval, notify on `self_approved`, require a platform admin. Decision
+    pending with the human; not fixed by client audit 2 Phase A.
+11. **`POST org-admin/invite` is not throttled** (Verifier C5) and sends an
+    e-mail with an owner-chosen name and organization name to any address,
+    registered or not. Decision pending with the human; not fixed by client
+    audit 2 Phase A.
+12. **Invite modal script ignores error responses** (Verifier C4). The script in
+    `user/org-admin/overview.blade.php` (around :301-331) and `index.blade.php`
+    (around :560-590) reads only an `error` key; any non-2xx JSON (403
+    `rbac_error`, 422 validation body) falls into the success branch and prints
+    `undefined` as the link. The `confirm_existing` / `existing` branches are
+    unreachable now and may stay. Decision pending with the human; not fixed by
+    client audit 2 Phase A.
+13. **Inviter authority on the guest new-hire path** (optional follow-up from
+    Verifier A1). Inviter authority is checked at accept for existing accounts
+    (section 4.5) but not on the guest path (`Auth\InviteController::register`
+    and `show`): a register link outlives its inviter's role, and the inviter
+    knows the link. The unverified state of invited new hires (item 8) currently
+    keeps that registrant behind the `verified` wall and so masks the gap;
+    fixing item 8 must not land without this item. Optional: apply the same rule
+    to `register` and `show`; a pending-invites list with revoke on the Team
+    page. `InviteInviterAuthorityTest::test_the_guest_register_link_is_deliberately_unchanged`
+    pins today's behaviour and must be flipped if this is approved. Decision
+    pending with the human; not fixed by client audit 2 Phase A.
 
 ## Change log (newest first)
+
+- 2026-10-26 - Client audit 2, Phase A verifier amendments: an unused
+  existing-account invite is valid at review and accept only while its inviter is
+  still an active member of the invite's org with `user_management` F (or a
+  listed, verified universal admin), otherwise the same 404 "invite invalid"
+  page (section 4.5, 10b); open items documented in section 12 (items 4, 6-13).
+  No migration, no route or route map change.
+
+- 2026-10-25 - Client audit 2, Phase A (branch `feature/client-audit-2-fixes`):
+  role assignment only to active members, no Platform roles and no Seller roles
+  in buyer orgs from the org screens, ownership transfer and delegation only to
+  members, existing accounts invited and accepted while signed in instead of
+  being attached directly (section 4.5); self-approval guard and auto-approved
+  orders for the sole approver, with `auto_approved` / `self_approved` audit
+  outcomes and the `orders:backfill-auto-approval` command (section 7); audit
+  pages show the two outcomes and a Details column. No migration, no route map
+  change; two open routes added (`invite/{token}/accept`).
 
 - 2026-10-07 - Per-organization enforcement (`rbac_enforced_org_ids`), real
   controller denials recorded as Blocked via `DenialRecorder`, audit-mode banner

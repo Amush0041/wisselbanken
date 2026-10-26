@@ -38,7 +38,8 @@ class InviteController extends Controller
             ->where('token', $token)
             ->first();
 
-        if (! $invite || $invite->isUsed() || $invite->isExpired()) {
+        if (! $invite || $invite->isUsed() || $invite->isExpired()
+            || ! app(RoleAssignmentService::class)->isAssignableByOrg($invite->role, $invite->organization->org_type)) {
             return redirect()->route('login')->with('error', 'This invite link is invalid or has expired.');
         }
 

@@ -14,6 +14,7 @@ use App\Models\Rbac\RoleAssignmentLog;
 use App\Models\Rbac\UserOrgRole;
 use App\Models\User;
 use App\Services\Rbac\PermissionService;
+use App\Services\Rbac\RoleAssignmentService;
 use App\Support\Rbac\OrganizationType;
 use App\Support\Rbac\UniversalAdmin;
 use Illuminate\Http\Request;
@@ -22,8 +23,10 @@ use Illuminate\Support\Facades\DB;
 
 class OrgSettingsController extends Controller
 {
-    public function __construct(private readonly PermissionService $permissions)
-    {
+    public function __construct(
+        private readonly PermissionService $permissions,
+        private readonly RoleAssignmentService $assignments,
+    ) {
     }
 
     public function index(): mixed
@@ -119,10 +122,13 @@ class OrgSettingsController extends Controller
         abort_if($ownerOverride && ! UniversalAdmin::is((int) Auth::id()), 403, 'Only the organization owner can transfer ownership.');
 
         $data = $request->validate([
-            'new_owner_email' => ['required', 'email', 'exists:users,email'],
+            'new_owner_email' => ['required', 'email'],
         ]);
 
-        $newOwner = User::where('email', $data['new_owner_email'])->firstOrFail();
+        $newOwner = User::where('email', $data['new_owner_email'])->first();
+        $newOwnerIsMember = $newOwner !== null && $this->assignments->isActiveMember((int) $newOwner->id, (int) $org->id);
+        $memberOverride = $newOwner !== null && ! $newOwnerIsMember && UniversalAdmin::is((int) Auth::id());
+        abort_unless($newOwnerIsMember || $memberOverride, 403, 'The new owner must already be an active member of this organization.');
 
         abort_if($newOwner->id === Auth::id(), 422, 'You are already the owner.');
 
@@ -131,6 +137,9 @@ class OrgSettingsController extends Controller
 
         if ($ownerOverride) {
             UniversalAdmin::recordBypass((int) Auth::id(), (int) $org->id, 'user_management', 'F', null, 'universal_ownership_transfer');
+        }
+        if ($memberOverride) {
+            UniversalAdmin::recordBypass((int) Auth::id(), (int) $org->id, 'user_management', 'F', null, 'universal_transfer_non_member');
         }
 
         DB::transaction(function () use ($org, $newOwner, $ownerRole, $ownerOverride) {

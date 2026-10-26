@@ -186,11 +186,11 @@ class RfqController extends Controller
             $selectedResponse = $locked->responses()->where('status', 'selected')->first();
             abort_if($selectedResponse === null, 422, 'No response has been selected for this RFQ.');
 
-            $routing = app(ApprovalRoutingService::class)->route((int) $locked->org_id, Auth::id());
+            $approvals = app(ApprovalRoutingService::class);
+            $routing = $approvals->route((int) $locked->org_id, Auth::id());
             if (! $routing['auto_approve'] && empty($routing['approver_ids'])) {
                 return null;
             }
-            $initialStatus = $routing['auto_approve'] ? 'pending' : 'pending_approval';
 
             $order = Order::create([
                 'user_id'        => Auth::id(),
@@ -205,12 +205,15 @@ class RfqController extends Controller
                 'postcode'       => '',
                 'notes'          => 'Converted from RFQ #' . $locked->id . '. ' . ($selectedResponse->notes ?? ''),
                 'payment_method' => 'rfq',
-                'status'         => $initialStatus,
                 'subtotal'       => $selectedResponse->total_price,
                 'tax'            => 0,
                 'tax_rate'       => 0,
                 'total'          => $selectedResponse->total_price,
-            ]);
+            ] + $approvals->initialOrderState($routing, (int) Auth::id()));
+
+            if ($routing['auto_approve']) {
+                $approvals->recordAutoApproval($order);
+            }
 
             $locked->update(['status' => 'converted']);
 
