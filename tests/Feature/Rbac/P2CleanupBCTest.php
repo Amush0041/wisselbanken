@@ -247,7 +247,7 @@ class P2CleanupBCTest extends ProjectTestCase
         $foreign = $this->mkQuote($this->outsider, $this->p3, ['status' => 'pending_approval']);
 
         $this->assertSame([$mine], $this->approvals($this->procMgr));
-        $this->assertSame([$mine], $this->approvals($this->orgOwner));
+        $this->assertSame([$mine, $otherProject], $this->approvals($this->orgOwner));
         $this->assertNotContains($draft, $this->approvals($this->procMgr));
         $this->assertNotContains($otherProject, $this->approvals($this->procMgr));
         $this->assertNotContains($foreign, $this->approvals($this->procMgr));
@@ -291,7 +291,7 @@ class P2CleanupBCTest extends ProjectTestCase
         $this->setMode($mode);
         $this->pendingQuote($this->p1);
         $bOwner = $this->mkUser($this->orgB, 'organization_owner');
-        $notMember = $this->mkUser($this->orgA, 'organization_owner');
+        $notMember = $this->mkUser($this->orgA, 'procurement_manager');
 
         $this->assertSame([], $this->approvals($bOwner));
         $this->assertSame([], $this->approvals($notMember));

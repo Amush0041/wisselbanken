@@ -27,7 +27,8 @@ Source of the original spec: `Revised_RBAC_Module_Implementation_Plan.pdf`
   evaluate against the principal (`DelegationService::resolveEffectiveUserId`);
   (1) collect the active role ids in that org; (2) strongest level for the
   group must satisfy the required level; (3) if `projectId` is given, the
-  effective user must be an active member of that project.
+  effective user must be an active member of that project, or hold
+  `organization_management` F in the org (section 2).
 - Seed size (counted from the seed data files): 25 permission groups, 49
   roles (P1 17, P2 14, P3 18), 19 organization types, 365 role-permission rows.
   The client's plan says 24 groups / 20 org types / 31 Release-1 roles: see
@@ -47,9 +48,20 @@ Source of the original spec: `Revised_RBAC_Module_Implementation_Plan.pdf`
   to a project via `rfq_requests.project_id` (nullable for legacy rows).
   `plan_crosswalk.project_id` links crosswalk rows to a project.
 - `checkPermission()`'s `projectId` is a `projects.id`, never a `quotes.id`.
-- `Project::scopeVisibleTo($userId, $orgId)`: project is in that org AND the
-  user has an **active** `project_members` row for it. There is no owner
-  bypass: an org owner sees only the projects they are a member of.
+- `Project::scopeVisibleTo($userId, $orgId)`: a live (not soft-deleted) project
+  of that org AND (the user has an **active** `project_members` row for it OR
+  `PermissionService::seesAllOrgProjects($userId, $orgId)`: the user's OWN active
+  roles in that org grant `organization_management` F; seeded: Organization
+  Owner, Organization Admin, Auditor/Read-All, Manufacturer Admin, Platform
+  Super Admin; no delegation is resolved), and a listed universal admin sees the
+  whole org as before (section 10b). This is visibility only: every write still
+  needs its group level, and the Owner is not auto-enrolled. W10 (client audit 2,
+  section 4.7) reverses the former rule "there is no owner bypass: an org owner
+  sees only the projects they are a member of" and departs from the original
+  plan's project-membership scoping; it ships only with the client's written
+  acknowledgement. Client acknowledgement of W10: PENDING (the human replaces
+  PENDING with the date when it arrives; the production deploy waits for it).
+  Every other role stays membership-scoped.
 - Creating a project needs `project_management` S; the creator is enrolled
   automatically (`ProjectController::store` calls `ProjectMember::enrol`).
   Update needs O, delete needs F, member changes need F.
@@ -64,8 +76,13 @@ Source of the original spec: `Revised_RBAC_Module_Implementation_Plan.pdf`
 
 - Table `project_members`: `project_id`, `user_id`, `org_id`, `granted_by`,
   `granted_at`, `is_active`. The membership org must equal `projects.org_id`.
-  The check in `PermissionService::isActiveProjectMember` joins `projects` and
-  also requires the project not to be soft-deleted.
+  The check in `PermissionService::isActiveProjectMember` (step 3 of the check
+  order) passes in two cases: the effective user has an active `project_members`
+  row (the query joins `projects`, so the project must be in the same org and not
+  soft-deleted), or `seesAllOrgProjects` is true for the effective user in that
+  org (section 2), and then the project must exist in the org and not be
+  soft-deleted. A project of another org, a soft-deleted project and a missing id
+  fail in both cases.
 - Legacy rows keyed only by `quote_id` (with `project_id` NULL) never grant
   access. The `quote_id` column still exists until Phase 5b (section 9).
 - Always change membership through `ProjectMember::enrol($project, $userId, $orgId, $grantedBy)`
@@ -231,8 +248,18 @@ outside the guard.
    (answer 200, 403 or 404 and no project/quote/crosswalk marker text).
 2. 404 before 403 on scoped writes: writes on project-, quote-, RFQ- or
    crosswalk-scoped objects resolve visibility first, so a hidden object
-   answers 404 instead of 403. Still a denial; nothing is written.
+   answers 404 instead of 403. Still a denial; nothing is written. This includes
+   `POST org-admin/projects/members` and `DELETE org-admin/projects/members/{projectMember}`
+   (the project is looked up through the acting user's own visibility; W10
+   amendment V1): a same-org non-member `project_management` F holder gets 404
+   there, no longer 403. A member-scoped `project_management` F holder (for example
+   an Estimator in P1 only) probing a hidden project there now gets 404 and leaves
+   no `rbac_audit_logs` row (it was 403 plus a `blocked` row before), the same as
+   the project-route twins.
 3. `GET org-admin/projects` now requires `project_management` R (403 below).
+   Its F branch lists every project of the org (open item 17); its non-F branch
+   (an Auditor/Read-All) lists `Project::visibleTo`, which since W10 is the whole
+   org (section 4.7).
 4. Ordinary-browser denials in enforce mode are 302 redirects, not 403.
 5. 404 for another org's record (client audit 2, O05, section 4.6): the five
    controller sites answer 404 instead of 403 when the record belongs to another
@@ -359,9 +386,11 @@ test class (TESTING.md).
   did before; for a below-level actor in audit mode the middleware's `would_block`
   row of the same request is upgraded in place instead and keeps its reason
   `no_grant`;
-  a missing id, the own-org success path, the status 403 of the order site and the
-  hidden-project 404 in `RfqController::authorizeRfq` (same org, a project the
-  actor cannot see) are not recorded as 404s. The remaining 403 of
+  a missing id, the own-org success path, the status 403 of the order site, the
+  hidden-project 404 in `RfqController::authorizeRfq` and the hidden-project 404 of
+  the two org-admin member screens (`POST org-admin/projects/members`, `DELETE
+  org-admin/projects/members/{projectMember}`; W10 amendment V1), each for a same-org
+  project the actor cannot see, are not recorded as 404s. The remaining 403 of
   `authorizeApprovalAction` now reads "This order is no longer pending approval."
   A delegate probing a foreign id leaves two rows (the `delegated_action` row of
   the middleware plus the denial row). A user acting in their own org can probe
@@ -381,9 +410,112 @@ test class (TESTING.md).
   delegation change or a request. Unmapped (open) routes are not logged. A
   universal admin who also holds a delegation is evaluated as the principal first,
   so such a request logs `delegated_action`. Test: `DelegationAuditTest`.
-- **Not built in this batch.** W10 (owner sees every project) is a separate later
-  batch and needs the client's written acknowledgement; sections 2, 3 and 5 still
-  describe membership-only project visibility.
+- **W10 (owner sees every project)** is batch 2 and is described in section 4.7.
+
+### 4.7 Client audit 2, Phase B batch 2 (W10)
+
+No migration, no config, no env, no new route, no `config/route_permission_map.php`
+change. The client item: "Owner cannot see projects created by other members (for
+example project 4)". Estimators can create projects (Matrix Note 20) and are
+enrolled alone, so the Owner held no `project_members` row. Decision H1 (an engine
+rule on `organization_management` F, not auto-enrolment), refined as below. W10
+reverses section 2's former "no owner bypass" rule and departs from the original
+plan's project-membership scoping, so it ships only with the client's written
+acknowledgement, status PENDING (section 2; as universal admin, section 10b, did).
+
+- **The rule.** `PermissionService::seesAllOrgProjects($userId, $orgId)` is true
+  when the given user's OWN active roles in that org grant `organization_management`
+  F (`holdsLevel`, the former steps 1-2 of `evaluate()`: active `user_org_roles`
+  rows, cached matrix, rank compare). It resolves no delegation, on purpose: through
+  `evaluate()` it would widen a delegate's own list and make delegation transitive
+  for project scope. It has no universal-admin logic (the callers keep theirs).
+- **Two decision points, changed together.** `Project::scopeVisibleTo` (the
+  list/visibility gate: the whole org instead of the membership sub-query) and
+  `PermissionService::isActiveProjectMember` (the permission-check gate, step 3 of
+  the check order: true when the project exists in the org and is not soft-deleted).
+  Everything else reads them: the project, quote, RFQ, crosswalk and dashboard
+  lists, the 8 `project_param` and 10 `quote_param` routes, and the controllers'
+  own checks. No other code decides project visibility. Unchanged:
+  `RbacAudit` (another org's, missing, soft-deleted and NULL-project cases still
+  end in the O05 404 in enforce mode), the route map, `Quote::scopeVisibleTo`,
+  `ProjectMember::enrol` / `deactivate`, the membership screens (except the
+  project lookup of `addProjectMember` / `removeProjectMember`, see the Delegation
+  bullet), the deletion refusals, the seller RFQ query, `OrgAdminController::projects`, universal admin,
+  delegation and per-org enforcement.
+- **Who gets it** (the database matrix decides, not role names): in the seed,
+  Organization Owner, Organization Admin, Auditor/Read-All, Manufacturer Admin and
+  Platform Super Admin, inside their own org only. Not: Estimator, Project Manager,
+  Procurement Manager (`organization_management` R), Executive Approver, financial
+  roles, Requisitioner, Coordinator, Viewer, Superintendent. A user with several
+  roles gets it if any one grants it (the solo onboarding bundle includes Owner).
+  A role given `organization_management` F through the global role editing (open
+  item 6) gains it too.
+- **Visibility, not authority.** A write still needs its group level, now
+  evaluated with the project id, so: the Owner (`project_management`,
+  `estimate_management`, `quote_rfq_management` and `procurement` all F) can edit,
+  add members to and delete (when it holds no estimates or RFQs) any project of the
+  org, edit and delete any estimate, and create and convert RFQs for any project;
+  Organization Admin (`project_management` F, `estimate_management` and
+  `quote_rfq_management` R) can edit projects, delete empty projects and manage
+  members, but only read estimates and RFQs; Auditor/Read-All only reads;
+  Manufacturer Admin holds `organization_management` F but neither
+  `project_management` nor `estimate_management`, and the project, estimate and
+  crosswalk routes are mapped to `project_management` R / `estimate_management` R:
+  in enforce mode `GET projects`, `projects/list`, `projects/{id}`, `plan-crosswalk`,
+  `quotes/list` and `quotes/{id}/details` answer 403; in audit mode (the middleware
+  only logs, and those project reads have no controller-side level check) the
+  project pages (name, address, member names and e-mails), `projects/list` and
+  `plan-crosswalk` answer 200, `quotes/list` is empty and `quotes/{id}/details`
+  answers 404; `GET rfq` answers 200 in both modes and shows project names.
+  Accepted: it follows the audit / enforce rule of section 4.3; keying the rule on
+  `organization_management` F AND `project_management` R is not planned (decision
+  for the human if the client objects). The Owner is NOT auto-enrolled: the membership screens, the
+  creator auto-enrol and the `project_member_logs` writes are as before (an Owner
+  can now add and remove members of any project of the org through them).
+- **Estimates and RFQs.** Through `Project::visibleTo`, an org-wide viewer reads
+  every estimate and RFQ of the org that their level allows (section 5). Quotes
+  with `project_id` NULL stay visible to nobody, the Owner included.
+- **Delegation (open item 3).** A delegate of an Owner passes project-scoped checks
+  as the principal (the middleware and the controllers' level checks evaluate the
+  principal) but keeps his own list, because the user-side controllers scope by the
+  logged-in id: on a project he is not in he gets 404 in both modes (enforce mode
+  answered 403) and `delegated_action` rows replace the `would_block` / `blocked`
+  rows of those requests. The two org-admin member screens look the project up
+  through the acting user's own `Project::visibleTo` like their project-route twins,
+  so a delegate cannot add, remove or enrol himself on a project he cannot see
+  (404, no denial row of its own; the middleware's `delegated_action` row is the
+  only one); on a project he is a member of he manages members as the principal,
+  attributed to him in `project_member_logs`. A delegation from a delegate is not a
+  second hop. Mirror case: an org-wide user (an Owner) who is himself the delegate
+  of a member-scoped principal is checked as that principal everywhere, but his own
+  list is org-wide; in audit mode `GET projects/{id}` for a project the principal is
+  not in answers 200 with a `would_block` row (the data is within his own
+  entitlement; before W10 it was 404), in enforce mode 403 with a `blocked` row, and
+  his writes are refused in both modes. Likewise an Auditor/Read-All who holds an
+  Owner's delegation can add and remove members on any project of the org, although
+  his own `project_management` level is R, because the engine judges the principal
+  (delegation working as designed; before W10 the call was 403 on a project the
+  Owner was not a member of). Accepted and documented; the Q11 decision
+  stays pending. `GET org-admin/projects` still lists every project with its member
+  list for a delegate of an Owner (open item 17).
+- **Universal admin (section 10b).** A listed user who also holds an org-wide role
+  passes project checks on the role and writes no `allowed_universal_admin` row for
+  them; a listed user with no such role is unchanged.
+- **Cost.** One extra indexed `user_org_roles` query per `Project::visibleTo` call
+  and per project-scoped check; no memoization. Measured on sqlite with a counting
+  subclass: `GET projects/list` +1 `user_org_roles` query, `quotes/list` +2,
+  `projects/{id}` +8 (of 72), the dashboard +5 (of 71); `PermissionService` is not a
+  container singleton, so each `Project::visibleTo` resolves a fresh instance.
+  Accepted; no memoization (a request-scoped memo keyed by user and org is an
+  optional follow-up).
+- **Deploy.** Code upload only; rollback is redeploying the previous release.
+- **Pending decisions** (not changed): open items 17 and 18.
+- Tests: `OrgWideProjectVisibilityTest` (39), `W10RegressionTest` (52, QA),
+  `W10AmendmentTest` (18), audit and enforce mode. Existing tests changed: 9 lines in
+  7 methods of `P2CleanupBCTest`, `UniversalAdminTest` and `AuditFindingsTest`
+  (TESTING.md), each moving a "member-scoped" expectation from an Owner to an actor
+  that stays member-scoped, or (the two `AuditFindingsTest` lines) a same-org
+  non-member from 403 to 404.
 
 ## 5. Quote (estimate) visibility
 
@@ -397,7 +529,10 @@ visible. Creating a quote requires `estimate_management` S inside a project
 the user can see (`POST projects/{project}/quotes` and `.../create-from-list/{listId}`).
 Writes (`QuoteController::writableQuote`) check visibility and then the level
 with the quote's project id. `QuoteAuthorScopeGuardTest` fails if any code
-outside `scopeVisibleTo` reads quotes by `user_id`.
+outside `scopeVisibleTo` reads quotes by `user_id`. For an org-wide viewer
+(section 4.7) `Project::visibleTo` is the whole org, so Organization Owner,
+Organization Admin and Auditor/Read-All read every estimate of the org (writes
+need the group level); a quote with `project_id` NULL is still visible to nobody.
 
 ## 6. Plan crosswalk
 
@@ -420,7 +555,9 @@ Seller routes (`RfqSellerController`): incoming R, respond S, decline S.
 - **Project scope.** New RFQs must be created inside a project the user can
   see (`project_id` required; checked with `checkPermission(..., 'quote_rfq_management', 'S', projectId)`).
   Buyer reads are filtered to NULL-project (legacy) RFQs plus visible
-  projects; a hidden project's RFQ answers 404. Sellers never see the buyer's
+  projects; a hidden project's RFQ answers 404. For an org-wide viewer (section
+  4.7) the visible projects are the whole org, so Owner, Organization Admin and
+  Auditor/Read-All see every RFQ of the org. Sellers never see the buyer's
   project: the seller query selects a column list without `project_id`.
 - **Status flow.** RFQ: `sent` -> `closed` (when the buyer selects a
   response) -> `converted` (when converted to an order). Recipient row:
@@ -542,7 +679,7 @@ after the real run: it must report nothing left to do.
 - **Audit**: every bypass writes an `rbac_audit_logs` row with outcome `allowed_universal_admin` (deduplicated per request) and a line in the never-pruned `universal-admin-*.log` channel. A failure of either write is caught and falls back to `Log::error`; the bypass decision stays true.
 - **Lifted for listed users only** (each logged as `allowed_universal_admin` with reason `universal_org_delete`, `universal_ownership_transfer`, `universal_delegation_revoke`, `universal_api_token_revoke`): org delete and ownership transfer without being the owner (transfer replaces the sitting owners), revoking another user's delegation (same org) or API token (token owner is a member of the current org), and a quote's `staff_notes` visible to non-authors. Org delete wipes the org's `rbac_audit_logs` rows, so its trail survives in the `universal-admin` log file only. A delegation revoked this way also writes a `delegation_revoked` row (section 4.6), but only when it was still active. Everyone else keeps owner-only and own-record rules.
 - **Role assignment (client audit 2)**: a listed user may assign a role to a non-member, hand ownership to an existing non-member, and assign Platform or Seller roles from the org screens; logged with reasons `universal_assign_non_member`, `universal_transfer_non_member`, `universal_assign_restricted_role` (section 4.5). Not lifted: delegating to a non-member, accepting someone else's invite (that is about the INVITEE accepting). Separately, an invite created by a listed, verified user stays valid at accept without the inviter holding a role in the org, while they are listed and verified (section 4.5).
-- **Unchanged**: SoD, seller-never-sees-buyer-project scoping, personal data scoped by `user_id` (carts, pallets, saved lists; customers are org data, see 10c), approval business rules (including the self-approval guard of section 7: a listed user cannot approve their own order while another approver exists); a listed user is not in any approver pool; delegation is not transitive; users not on the list behave exactly as before.
+- **Unchanged**: SoD, seller-never-sees-buyer-project scoping, personal data scoped by `user_id` (carts, pallets, saved lists; customers are org data, see 10c), approval business rules (including the self-approval guard of section 7: a listed user cannot approve their own order while another approver exists); a listed user is not in any approver pool; delegation is not transitive; users not on the list behave exactly as before. A listed user who also holds an org-wide role (`organization_management` F, section 4.7) passes project-scoped checks on the role and writes no `allowed_universal_admin` row for them; a listed user without such a role is unchanged (whole-org list, one bypass row per check).
 - **UI**: listed users see 'Platform admin panel' and 'Enforcement mode' links in the user navbar (`$navUniversalAdmin`). The org audit-log Enforcement tab labels rows by stored outcome (Blocked / Would Block / Platform admin / Auto-approved / Self-approved (sole approver)), shows the row's `reason` in a Details column (underscores as spaces), and its banner reflects the real `rbac_mode` and `rbac.enforce_batches`.
 - **Deviation**: this departs from plan section 3.4 (no role outside `user_org_roles`) and needs the client's written acknowledgement.
 
@@ -565,7 +702,21 @@ assume rep-agency seller authorization is enforced until this is fixed.
 3. **Delegation (plan question Q11):** `checkPermission()` evaluates a
    delegate against the principal, but controllers scope project visibility by
    the logged-in user id, so a delegate can pass the check and then get a 404.
-   Decision pending.
+   Decision pending. W10 (section 4.7) adds one case: a delegate of an Owner
+   passes the project-scoped check as the principal for every project of the org,
+   but his list stays his own (`seesAllOrgProjects` never resolves a delegation),
+   so on a project he is not in he gets 404 in both modes (enforce mode answered
+   403) and `delegated_action` rows replace the `would_block` / `blocked` rows of
+   those requests. Unchanged in kind; the Q11 decision itself stays pending. The
+   two org-admin member screens (`POST org-admin/projects/members`, `DELETE
+   org-admin/projects/members/{projectMember}`) look the project up through the
+   acting user's own `Project::visibleTo`, so a delegate of an Owner cannot add,
+   remove or enrol himself on a project he cannot see (W10 amendment V1). Mirror
+   case: an Owner who is himself the delegate of a member-scoped principal is
+   checked as that principal, but his own list is org-wide, so in audit mode
+   `GET projects/{id}` for a project the principal is not in answers 200 with a
+   `would_block` row (enforce mode: 403, `blocked` row); his writes are refused in
+   both modes. Accepted.
 4. **MariaDB-only behaviour not proven by tests** (the tests run on in-memory
    sqlite): the concurrent-enrol race, `lockForUpdate` semantics, the
    `quotes.user_id` cascade behaviour, two simultaneous accepts of one invite
@@ -588,8 +739,14 @@ assume rep-agency seller authorization is enforced until this is fixed.
    category is not Platform), and one tenant can change another tenant's
    approver pool. `updateRolePermission` does not call `PermissionMatrix::flush()`,
    so `checkPermission` (cached) and `approverPool` (table read) disagree until
-   the cache expires. Decision pending with the human; not fixed by client audit 2
-   Phase A.
+   the cache expires. A role given `organization_management` F through these
+   screens also gains org-wide project visibility (W10, section 4.7). W10 raises
+   its impact: an Organization Admin of org A who grants `organization_management`
+   F to a role gives that role whole-organization project visibility in EVERY
+   organization that uses the role (roles are global), and `updateRolePermission`
+   does not call `PermissionMatrix::flush()`, so the effect appears after the cache
+   expires (`PermissionMatrix::CACHE_TTL` is 86400 s, 24 h). Decision pending with
+   the human; not changed.
 7. **Stale-session approvals** (Verifier C2, HIGH, pre-existing).
    `OrderApprovalController::index` (:25) and `authorizeApprovalAction` (:88),
    and `CheckoutController` (:211, :231), compare the order's org with
@@ -684,8 +841,43 @@ assume rep-agency seller authorization is enforced until this is fixed.
     row count tells the prober which ids exist elsewhere. This is the same signal
     the old 403 gave, and the row contains no id, name or other data of the foreign
     record. Recommended: accept. Decision pending with the human; not changed.
+17. **`GET org-admin/projects` lists every project of the org for any
+    `project_management` F holder (pre-existing; found while planning W10).**
+    `OrgAdminController::projects` keys on `project_management` F, which Estimator
+    and Project Manager also hold, so an Estimator who is a member of one project
+    sees the names and member lists of all projects of the org on that page, while
+    every user-side list, quote, RFQ, crosswalk and project check stays
+    membership-scoped for them. W10 does not change it (only its non-F branch, the
+    Auditor, widens through the scope). A delegate of an Owner also sees every
+    project and member list there while the delegation is active; the add / remove
+    forms for projects he cannot see answer 404. Decision pending with the human;
+    not changed.
+18. **Dashboard "My Projects" lists every visible quote (pre-existing; grows with
+    W10).** `UserWorkspaceController::index` lists every visible QUOTE, with no
+    limit, under the heading "My Projects". For an org-wide viewer (section 4.7)
+    that is every quote of the org (load and wording). Optional follow-up: a limit
+    and a different heading. Decision pending with the human; not changed.
 
 ## Change log (newest first)
+
+- 2026-10-27 - Client audit 2, Phase B batch 2, W10 (owner sees every project):
+  `PermissionService::seesAllOrgProjects` (the user's OWN active roles grant
+  `organization_management` F; no delegation resolved) is read by
+  `Project::scopeVisibleTo` and `PermissionService::isActiveProjectMember`, so
+  Organization Owner, Organization Admin, Auditor/Read-All (and, inside their own
+  org, Manufacturer Admin and Platform Super Admin) see every live project of their
+  org without a `project_members` row; visibility only, nobody is auto-enrolled,
+  every other role stays membership-scoped (sections 1, 2, 3, 4.4, 4.7, 5, 7, 10b).
+  Reverses the former "no owner bypass" rule; ships only with the client's written
+  acknowledgement (status PENDING, section 2). Open items 3 and 6 annotated, 17 and
+  18 added. Amendment after the Verifier (PLAN 10.14.12): the two org-admin member
+  screens (`addProjectMember`, `removeProjectMember`) look the project up through
+  the acting user's own `Project::visibleTo` (V1: a delegate of an Owner can no
+  longer add, remove or enrol himself on a project he cannot see; a same-org
+  non-member gets 404 there instead of 403), two `AuditFindingsTest` lines
+  changed accordingly, and the documentation corrections (Manufacturer Admin audit
+  versus enforce, Organization Admin deletes empty projects, cost, Owner-as-delegate
+  mirror case). No migration, config, env, route or route map change.
 
 - 2026-10-27 - Client audit 2, Phase B batch 1, verifier amendment V1 (PLAN 10.13):
   the five controller 404s for another org's record call `DenialRecorder` before the

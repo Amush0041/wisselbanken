@@ -90,19 +90,7 @@ class PermissionService
         //    against the principal's roles rather than the delegate's own roles.
         $effectiveUserId = $this->delegation->resolveEffectiveUserId($userId, $orgId);
 
-        // 1. Active role ids the effective user holds in THIS organization. org_id is always
-        //    required — there is no code path that checks permissions without an org context.
-        $roleIds = $this->activeRoleIds($effectiveUserId, $orgId);
-
-        if ($roleIds === []) {
-            return false;
-        }
-
-        // 2. Strongest level granted across those roles for the group (from the cached matrix).
-        $grantedLevel = $this->matrix->levelFor($roleIds, $permissionGroup);
-
-        if ($grantedLevel === null
-            || PermissionMatrix::rank($grantedLevel) > PermissionMatrix::rank($requiredLevel)) {
+        if (! $this->holdsLevel($effectiveUserId, $orgId, $permissionGroup, $requiredLevel)) {
             return false;
         }
 
@@ -113,6 +101,30 @@ class PermissionService
         }
 
         return true;
+    }
+
+    private function holdsLevel(int $userId, int $orgId, string $permissionGroup, string $requiredLevel): bool
+    {
+        // 1. Active role ids the user holds in THIS organization. org_id is always
+        //    required — there is no code path that checks permissions without an org context.
+        $roleIds = $this->activeRoleIds($userId, $orgId);
+
+        if ($roleIds === []) {
+            return false;
+        }
+
+        // 2. Strongest level granted across those roles for the group (from the cached matrix).
+        $grantedLevel = $this->matrix->levelFor($roleIds, $permissionGroup);
+
+        return $grantedLevel !== null
+            && PermissionMatrix::rank($grantedLevel) <= PermissionMatrix::rank($requiredLevel);
+    }
+
+    // The user's own roles only: resolving a delegation here would widen a delegate's project
+    // list (ARCHITECTURE 12.3) and make delegation transitive for project scope.
+    public function seesAllOrgProjects(int $userId, int $orgId): bool
+    {
+        return $this->holdsLevel($userId, $orgId, 'organization_management', 'F');
     }
 
     /**
@@ -155,6 +167,14 @@ class PermissionService
 
     private function isActiveProjectMember(int $userId, int $orgId, int $projectId): bool
     {
+        if ($this->seesAllOrgProjects($userId, $orgId)) {
+            return DB::table('projects')
+                ->where('id', $projectId)
+                ->where('org_id', $orgId)
+                ->whereNull('deleted_at')
+                ->exists();
+        }
+
         return DB::table('project_members')
             ->join('projects', 'projects.id', '=', 'project_members.project_id')
             ->where('project_members.project_id', $projectId)

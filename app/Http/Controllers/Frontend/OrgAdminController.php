@@ -618,7 +618,7 @@ class OrgAdminController extends Controller
             'user_id'    => ['required', 'integer', 'exists:users,id'],
         ]);
 
-        $project = Project::where('org_id', $org->id)->findOrFail($data['project_id']);
+        $project = Project::visibleTo((int) Auth::id(), (int) $org->id)->findOrFail($data['project_id']);
         $this->requireProjectFull($project, $org);
 
         $isOrgMember = UserOrgRole::where('org_id', $org->id)
@@ -647,7 +647,7 @@ class OrgAdminController extends Controller
             abort(404);
         }
         $this->requireOrgLevel($org, 'project_management', 'F', 'You need full project management access to change project members.');
-        $project = Project::where('org_id', $org->id)->findOrFail($projectMember->project_id);
+        $project = Project::visibleTo((int) Auth::id(), (int) $org->id)->findOrFail($projectMember->project_id);
         $this->requireProjectFull($project, $org);
 
         $projectMember->deactivate((int) Auth::id());

@@ -75,7 +75,13 @@ Warnings:
   Always pass the organization; get it from `CurrentOrg::id($userId)`. Never
   test a role name in code.
 - Project scope: when a `projectId` (a `projects.id`) is passed, the user must
-  also be an active member of that project. There is no owner override.
+  also be an active member of that project, or hold organization management
+  Full access in the organization (in the delivered matrix: Organization Owner,
+  Organization Admin, Auditor/Read-All, Manufacturer Admin and Platform Super
+  Admin, each inside its own organization), in which case they see every
+  project of that organization (`PermissionService::seesAllOrgProjects`;
+  ARCHITECTURE.md section 4.7). That is visibility only: every write still needs
+  its own group level, and nobody is enrolled automatically.
 - Quotes belong to a project; a quote is visible to a user when the project is
   visible to them and they hold `estimate_management` R, or they wrote it.
   RFQs also belong to a project. Sellers never see the buyer's project.
@@ -113,9 +119,19 @@ turns it off. It takes up to 60 seconds to apply and each change is logged
 Would Block means only the middleware would have refused it and nothing else
 did, so the request went through.
 
-**Projects page.** `/org-admin/projects` lists all organization projects only
-for users with project management Full access; everyone else sees only the
-projects they are an active member of.
+**Projects page.** `/org-admin/projects` needs project management Read. It lists
+every organization project for users with project management Full access, and
+also for the Auditor/Read-All (organization management Full access; no add or
+remove controls, because project management is Read for that role). Every other
+user with project management Read sees only the projects they are an active
+member of. The user-side project list, quotes, RFQs and project checks follow
+the organization-wide rule instead: holders of organization management Full
+access (Organization Owner, Organization Admin, Auditor/Read-All, Manufacturer
+Admin and Platform Super Admin) see every project of their organization there,
+everyone else only the projects they are an active member of (ARCHITECTURE.md
+section 4.7). Adding or removing a project member, on either screen, needs
+project management Full access on a project the acting user can see himself; a
+delegate acts with his principal's rights but only on projects he can see.
 
 Because audit mode lets requests through, controllers also check levels
 themselves (section 7), so the important protections hold in both modes.

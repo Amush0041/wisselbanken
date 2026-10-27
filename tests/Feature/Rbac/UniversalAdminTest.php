@@ -317,7 +317,7 @@ class UniversalAdminTest extends ProjectTestCase
         }
 
         $this->assertFalse($perm->checkPermission($this->viewer->id, $this->orgA->id, 'user_management', 'F'));
-        $this->assertFalse($perm->checkPermission($this->ownerA->id, $this->orgA->id, 'project_management', 'R', $this->p2), 'owner A is not a member of P2');
+        $this->assertFalse($perm->checkPermission($this->est->id, $this->orgA->id, 'project_management', 'R', $this->p2), 'est is not a member of P2');
         $this->assertFalse($perm->checkPermission($this->ownerA->id, $this->orgA->id, 'project_management', 'R', $this->p3), 'P3 is in org B');
         $this->assertFalse($perm->checkPermission($this->stranger->id, $this->orgA->id, 'project_management', 'R', $this->p1));
         $this->assertFalse($perm->checkPermission($this->ownerA->id, $this->orgA->id, 'project_management', 'R', 99999));
@@ -338,7 +338,7 @@ class UniversalAdminTest extends ProjectTestCase
         $this->assertSame([], $ids(Project::visibleTo($this->owner->id, $this->orgB->id)));
         $this->assertSame([], $ids(Project::visibleTo($this->adminAcct->id, $a)));
         $this->assertSame([], $ids(Project::visibleTo($this->ownerA->id, $this->orgB->id)));
-        $this->assertSame([$this->p1], $ids(Project::visibleTo($this->ownerA->id, $a)));
+        $this->assertSame([$this->p1, $this->p2], $ids(Project::visibleTo($this->ownerA->id, $a)));
         $this->assertSame([$this->p3], $ids(Project::visibleTo($this->outsider->id, $this->orgB->id)));
 
         $this->assertSame([$this->q1, $this->q2], $ids(Quote::visibleTo($this->viewer->id, $a)));
@@ -356,14 +356,14 @@ class UniversalAdminTest extends ProjectTestCase
         foreach (['GET' => [], 'PUT' => ['name' => 'X', 'status' => 'active']] as $method => $data) {
             $this->assertContains($this->req($this->stranger, $method, "projects/{$this->p1}", $data, $this->orgA->id)->getStatusCode(), [403, 404]);
             $this->assertContains($this->req($this->est, $method, "projects/{$this->p3}", $data, $this->orgA->id)->getStatusCode(), [403, 404]);
-            $this->assertContains($this->req($this->ownerA, $method, "projects/{$this->p2}", $data, $this->orgA->id)->getStatusCode(), [403, 404]);
+            $this->assertContains($this->req($this->est, $method, "projects/{$this->p2}", $data, $this->orgA->id)->getStatusCode(), [403, 404]);
         }
         $this->assertContains($this->req($this->stranger, 'POST', "projects/{$this->p1}/members", ['user_id' => $this->est->id], $this->orgA->id)->getStatusCode(), [403, 404]);
-        $this->assertContains($this->req($this->ownerA, 'POST', "projects/{$this->p2}/quotes", [], $this->orgA->id)->getStatusCode(), [403, 404]);
+        $this->assertContains($this->req($this->est, 'POST', "projects/{$this->p2}/quotes", [], $this->orgA->id)->getStatusCode(), [403, 404]);
         $this->assertSame('P1', DB::table('projects')->where('id', $this->p1)->value('name'));
         $this->assertSame('P2', DB::table('projects')->where('id', $this->p2)->value('name'));
 
-        $list = $this->req($this->ownerA, 'GET', 'projects/list', [], $this->orgA->id)->assertOk()->json('projects');
+        $list = $this->req($this->est, 'GET', 'projects/list', [], $this->orgA->id)->assertOk()->json('projects');
         $this->assertSame([$this->p1], array_map('intval', array_column($list, 'id')));
     }
 

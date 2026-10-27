@@ -337,7 +337,7 @@ All permissions use a strict five-level hierarchy. A user with a higher level au
 2. Checks if any active delegation grants an elevated role for this user.
 3. Uses `PermissionMatrix` (a cached `role_id → group_slug → level` map, 10-minute TTL) to look up each role's level for the requested group.
 4. Returns `true` if the best level found satisfies the hierarchy requirement (F ≥ A ≥ O ≥ S ≥ R).
-5. If `projectId` is provided, additionally verifies the user has an active `project_members` record for that project in this org.
+5. If `projectId` is provided, additionally verifies the user has an active `project_members` record for that project in this org, or holds `organization_management` Full access there (`seesAllOrgProjects`, the user's own roles only).
 
 ### 6.5 RbacAudit Middleware
 

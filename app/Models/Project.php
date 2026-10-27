@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Models\Rbac\Organization;
 use App\Models\Rbac\ProjectMember;
+use App\Services\Rbac\PermissionService;
 use App\Support\Rbac\UniversalAdmin;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -62,7 +63,7 @@ class Project extends Model
 
     public function scopeVisibleTo(Builder $query, int $userId, int $orgId): Builder
     {
-        if (UniversalAdmin::is($userId)) {
+        if (UniversalAdmin::is($userId) || app(PermissionService::class)->seesAllOrgProjects($userId, $orgId)) {
             return $query->where('projects.org_id', $orgId);
         }
 

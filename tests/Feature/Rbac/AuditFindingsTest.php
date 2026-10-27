@@ -146,7 +146,7 @@ class AuditFindingsTest extends ProjectTestCase
         $this->asJ($this->dual, 'POST', $url, ['project_id' => $this->p1, 'user_id' => $target->id], $this->orgA->id)->assertForbidden();
         $this->assertFalse($this->active($this->p1, $target));
 
-        $this->asJ($this->est, 'POST', $url, ['project_id' => $this->p2, 'user_id' => $target->id])->assertForbidden();
+        $this->asJ($this->est, 'POST', $url, ['project_id' => $this->p2, 'user_id' => $target->id])->assertNotFound();
         $this->assertFalse($this->active($this->p2, $target));
     }
 
@@ -203,7 +203,7 @@ class AuditFindingsTest extends ProjectTestCase
 
         $victim = $this->mkUser($this->orgA, 'estimator');
         $p2Row = $this->member($this->p2, $victim, $this->orgA);
-        $this->asJ($this->est, 'DELETE', route('org-admin.projects.members.destroy', $p2Row))->assertForbidden();
+        $this->asJ($this->est, 'DELETE', route('org-admin.projects.members.destroy', $p2Row))->assertNotFound();
         $this->assertTrue($this->active($this->p2, $victim));
     }
 
