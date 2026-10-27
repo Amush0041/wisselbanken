@@ -1,6 +1,6 @@
 # Audit pack: routes and permission map
 
-Generated from branch `feature/client-audit-2-fixes` (base `release/1.1-prod`, commit d5efe32, plus the client audit 2 Phase A changes).
+Generated from branch `feature/client-audit-2-fixes` (base `release/1.1-prod`, commit d5efe32, plus the client audit 2 Phase A changes and Phase B batch 1: no route was added or removed and the map is unchanged; the only difference in `route-list.json` is the `throttle:20,1` middleware on POST org-admin/connections).
 
 - `route-list.json`: output of `php artisan route:list --json` (293 routes: method, URI, name, action, middleware).
 - `route_permission_map.php`: a copy of `config/route_permission_map.php`. Key is `"METHOD uri"`; value is `[permission group, required level, batch, optional project_param / quote_param]`.

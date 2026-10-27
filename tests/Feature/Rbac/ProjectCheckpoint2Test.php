@@ -171,10 +171,10 @@ class ProjectCheckpoint2Test extends ProjectTestCase
     {
         $this->setMode($mode);
         // q3 is in P2 (est is not a member), q4 is in org B
-        foreach ([$this->q3, $this->q4] as $q) {
-            $this->req($this->est, 'PUT', "quotes/$q", ['notes' => 'x'])->assertStatus($mode === 'enforce' ? 403 : 404);
-            $this->req($this->est, 'DELETE', "quotes/$q")->assertStatus($mode === 'enforce' ? 403 : 404);
-        }
+        $this->req($this->est, 'PUT', "quotes/{$this->q3}", ['notes' => 'x'])->assertStatus($mode === 'enforce' ? 403 : 404);
+        $this->req($this->est, 'DELETE', "quotes/{$this->q3}")->assertStatus($mode === 'enforce' ? 403 : 404);
+        $this->req($this->est, 'PUT', "quotes/{$this->q4}", ['notes' => 'x'])->assertNotFound();
+        $this->req($this->est, 'DELETE', "quotes/{$this->q4}")->assertNotFound();
         $this->assertNull(DB::table('quotes')->where('id', $this->q3)->value('notes'));
         $this->assertTrue(DB::table('quotes')->where('id', $this->q3)->whereNull('deleted_at')->exists());
     }
@@ -189,7 +189,7 @@ class ProjectCheckpoint2Test extends ProjectTestCase
         $this->assertNull(DB::table('quotes')->where('id', $own)->value('notes'), 'audit writes nothing');
 
         $this->setMode('enforce');
-        $this->req($this->est, 'PUT', "quotes/$own", ['notes' => 'enforce'])->assertForbidden();
+        $this->req($this->est, 'PUT', "quotes/$own", ['notes' => 'enforce'])->assertNotFound();
         $this->assertNull(DB::table('quotes')->where('id', $own)->value('notes'), 'enforce writes nothing');
         $this->assertTrue(DB::table('quotes')->where('id', $own)->whereNull('deleted_at')->exists());
     }

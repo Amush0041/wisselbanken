@@ -195,9 +195,9 @@ class AuditFindingsTest extends ProjectTestCase
         $orgARow = $this->memberRowId($this->p1, $this->viewer);
         $orgBRow = $this->memberRowId($this->p3, $this->outsider);
 
-        $this->asJ($this->outsider, 'DELETE', route('org-admin.projects.members.destroy', $orgARow))->assertForbidden();
-        $this->asJ($this->ownerB, 'DELETE', route('org-admin.projects.members.destroy', $orgARow))->assertForbidden();
-        $this->asJ($this->est, 'DELETE', route('org-admin.projects.members.destroy', $orgBRow))->assertForbidden();
+        $this->asJ($this->outsider, 'DELETE', route('org-admin.projects.members.destroy', $orgARow))->assertNotFound();
+        $this->asJ($this->ownerB, 'DELETE', route('org-admin.projects.members.destroy', $orgARow))->assertNotFound();
+        $this->asJ($this->est, 'DELETE', route('org-admin.projects.members.destroy', $orgBRow))->assertNotFound();
         $this->assertTrue($this->active($this->p1, $this->viewer));
         $this->assertTrue($this->active($this->p3, $this->outsider));
 
@@ -432,7 +432,7 @@ class AuditFindingsTest extends ProjectTestCase
     public function test_d_connection_store_needs_organization_management_f(string $mode): void
     {
         $this->setMode($mode);
-        $payload = ['to_org_id' => $this->orgB->id, 'relationship_type' => 'buyer_seller'];
+        $payload = ['partner_name' => $this->orgB->name, 'relationship_type' => 'buyer_seller'];
 
         foreach ([$this->proc, $this->viewer, $this->est, $this->eng] as $u) {
             $this->asJ($u, 'POST', 'org-admin/connections', $payload)->assertForbidden();
@@ -453,8 +453,8 @@ class AuditFindingsTest extends ProjectTestCase
         foreach ([$this->proc, $this->viewer, $this->est] as $u) {
             $this->asJ($u, 'DELETE', route('org-admin.connections.destroy', $rel))->assertForbidden();
         }
-        $this->asJ($this->ownerB, 'DELETE', route('org-admin.connections.destroy', $rel))->assertForbidden();
-        $this->asJ($this->dual, 'DELETE', route('org-admin.connections.destroy', $rel), [], $this->orgB->id)->assertForbidden();
+        $this->asJ($this->ownerB, 'DELETE', route('org-admin.connections.destroy', $rel))->assertNotFound();
+        $this->asJ($this->dual, 'DELETE', route('org-admin.connections.destroy', $rel), [], $this->orgB->id)->assertNotFound();
         $this->asJ($this->dual, 'DELETE', route('org-admin.connections.destroy', $rel), [], $this->orgA->id)->assertForbidden();
         $this->assertTrue((bool) OrgRelationship::find($rel)->is_active);
 

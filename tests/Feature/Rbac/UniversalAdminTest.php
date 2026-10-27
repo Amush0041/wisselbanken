@@ -534,7 +534,7 @@ class UniversalAdminTest extends ProjectTestCase
         $pending = $this->actingAs($this->orgOwner)->withSession($this->orgSession($a))->get('order-approvals')->assertOk()->viewData('pendingOrders');
         $this->assertSame([$inA], $pending->pluck('id')->map(fn ($i) => (int) $i)->all());
 
-        $this->req($this->orgOwner, 'POST', "orders/$inB/approve", [], $a)->assertForbidden();
+        $this->req($this->orgOwner, 'POST', "orders/$inB/approve", [], $a)->assertNotFound();
         $this->assertSame('pending_approval', DB::table('orders')->where('id', $inB)->value('status'));
         $this->req($this->orgOwner, 'POST', "orders/$inA/approve", [], $a)->assertStatus(302);
         $this->assertSame('processing', DB::table('orders')->where('id', $inA)->value('status'));
@@ -870,7 +870,7 @@ class UniversalAdminTest extends ProjectTestCase
                 $otherOrg = $this->mkOrder($this->orgB->id, $this->outsider);
                 $this->req($this->viewer, 'POST', "orders/$order/$verb", [], $a)->assertForbidden();
                 $this->assertSame('pending_approval', DB::table('orders')->where('id', $order)->value('status'));
-                $this->req($this->ua, 'POST', "orders/$otherOrg/$verb", [], $a)->assertForbidden();
+                $this->req($this->ua, 'POST', "orders/$otherOrg/$verb", [], $a)->assertNotFound();
                 $this->assertSame('pending_approval', DB::table('orders')->where('id', $otherOrg)->value('status'), 'only the order of the org being worked in');
                 $this->req($this->ua, 'POST', "orders/$order/$verb", ['note' => 'unblocked'], $a)->assertStatus(302);
                 $row = DB::table('orders')->where('id', $order)->first();

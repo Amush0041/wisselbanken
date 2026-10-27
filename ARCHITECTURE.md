@@ -112,6 +112,12 @@ A failed check is written to `rbac_audit_logs` (`outcome` = `would_block` or
 `blocked`, with `reason` = `no_org`, `project_unresolved`, `no_grant` or
 `no_grant_or_not_project_member`, plus `project_id` and `quote_id`).
 
+Two additions from client audit 2, Phase B batch 1 (section 4.6): in enforce
+mode a scoped route whose project is not a live project of the acting org is
+answered 404, and on the allowed path of a mapped route a request made by a
+delegate writes one `delegated_action` row. `RbacAudit` is constructed with
+`PermissionService` and `DelegationService`.
+
 ### 4.3 Audit mode versus enforce mode
 
 - **The operative mode is the database row `rbac_settings.rbac_mode`**
@@ -128,7 +134,9 @@ A failed check is written to `rbac_audit_logs` (`outcome` = `would_block` or
 - Enforce mode: JSON/AJAX requests get `403` with a JSON body
   (`rbac_error`, `message`); ordinary browser requests are redirected back
   with a `rbac_denied` flash (a 302, by design). This is why a no-org user in
-  enforce mode gets a 302 (known test failure, section 12).
+  enforce mode gets a 302 (known test failure, section 12). Exception: a scoped
+  project or quote that is not a live project of the acting org answers 404
+  "Not found." for JSON and browser alike (section 4.6, O05).
 - **Per-organization enforcement.** The `rbac_settings` row
   `rbac_enforced_org_ids` (JSON array of org ids, no migration; missing, empty
   or invalid = no orgs) makes `RbacAudit::isEnforcing($batch, $orgId)` true for
@@ -140,7 +148,12 @@ A failed check is written to `rbac_audit_logs` (`outcome` = `would_block` or
   `enforcement_enabled`/`enforcement_disabled`) plus a `rbac-enforcement-change`
   log line. 60-second cache, same as the mode. Rollback: save an empty selection.
 - **Blocked versus Would Block.** `App\Support\Rbac\DenialRecorder` is called
-  from the central 403 handler in `bootstrap/app.php`. A controller `abort(403)`
+  from the central 403 handler in `bootstrap/app.php` AND explicitly, right before
+  the `abort(404)`, at the five controller sites of section 4.6 (the handler
+  ignores every status except 403, so a bare 404 would write nothing; the result is
+  one `blocked` row with reason `controller_denied`, or, for a below-level actor
+  in audit mode, the middleware's `would_block` row upgraded in place, which keeps
+  its reason `no_grant`). A controller `abort(403)`
   in audit mode upgrades the same request's `would_block` row to `blocked`;
   if the middleware wrote no row (unmapped route or integrity abort) it inserts
   one with `reason = controller_denied`. So Blocked = a real refusal; Would Block
@@ -149,9 +162,20 @@ A failed check is written to `rbac_audit_logs` (`outcome` = `would_block` or
   `would_block`, `blocked`, `allowed_universal_admin`, `enforcement_changed`, and
   the business events written by `AuditLog::event()`: `auto_approved` (reason
   `sole_approver order ORD-x`, or `sole_approver_backfill order ORD-x` from the
-  backfill command) and `self_approved` (reason `sole_approver_self_approval order ORD-x`).
-  Both admin audit pages and the org Enforcement tab have an explicit label for
-  each; an unknown outcome shows its raw value.
+  backfill command), `self_approved` (reason `sole_approver_self_approval order ORD-x`),
+  and the delegation events `delegation_granted` / `delegation_revoked` (user =
+  the actor, org = the delegation's org, group `delegation_and_impersonation`,
+  level O on the org screens and F on the platform-admin screen, reason `delegate
+  <name> (#id) for <name> (#id), <start> to <end>`) and `delegated_action` (user =
+  the delegate, reason `acting for <principal> (#id)`, with method, route, matched
+  pattern, group, level, project, quote and batch). Both admin audit pages and
+  the org Enforcement tab (`?tab=enforcement`) have an explicit label for each;
+  an unknown outcome shows its raw value.
+- **Unreachable branch.** The `project_unresolved` message branch in
+  `RbacAudit::friendlyMessage` is no longer reachable in enforce mode (that reason
+  now always ends in the 404 of section 4.6); it is kept, do not rely on it. The
+  `no_grant_or_not_project_member` branch of the same function stays reachable
+  (same-org non-member).
 - Local `.env` says `RBAC_MODE=enforce` and `RBAC_ENFORCE_BATCHES=admin,read,write,approve`.
   Production is reported to be in enforce mode; this cannot be verified from
   the repository.
@@ -210,6 +234,18 @@ outside the guard.
    answers 404 instead of 403. Still a denial; nothing is written.
 3. `GET org-admin/projects` now requires `project_management` R (403 below).
 4. Ordinary-browser denials in enforce mode are 302 redirects, not 403.
+5. 404 for another org's record (client audit 2, O05, section 4.6): the five
+   controller sites answer 404 instead of 403 when the record belongs to another
+   organization. That 404 is reached only by actors who pass the route's level;
+   a below-level actor gets the middleware's 403 in enforce mode, and on
+   route-model-bound routes (`{rfq}`, `{order}`, `{userOrgRole}`,
+   `{projectMember}`, `{orgRelationship}`) a missing id answers 404 before the
+   middleware runs (`SubstituteBindings` runs before `RbacAudit`). Each of those
+   controller 404s for another org's record leaves one `blocked` row (reason
+   `controller_denied`; the explicit `DenialRecorder::record(request())` call, as
+   the old 403 did; for a below-level actor in audit mode the middleware's
+   `would_block` row is upgraded in place and keeps reason `no_grant`); a missing
+   id (route binding) leaves none.
 
 ### 4.5 Who may receive which role (client audit 2, Phase A)
 
@@ -270,6 +306,84 @@ invite acceptance, delegation and onboarding still call it directly.
 - **Audit helper.** `AuditLog::event($outcome, $userId, $orgId, $group, $level, $reason, $method?, $routeUri?)`
   writes a business-event row to `rbac_audit_logs` (method and route from the
   request, `CLI` / `artisan <name>` outside a request). It is not fail-soft.
+
+### 4.6 Client audit 2, Phase B batch 1
+
+No migration, no new route, no route map change. Each item is covered by its own
+test class (TESTING.md).
+
+- **Separation of Duties in a sole-member org (N01).** `SodService::conflictsFor`
+  returns no conflict when the target is the only distinct active member of the
+  org (`user_org_roles`, `is_active`), because the solo onboarding bundle
+  (Owner, Project Manager, Estimator, Executive Approver) holds roles the rules
+  forbid together. As soon as a second member with an active row exists, SoD
+  applies again to every NEW assignment; nothing is revoked retroactively. Applies
+  to all rules, whatever `sod_conflict_rules` holds. Test: `SodSoloOrgTest`.
+- **JSON error bodies (S13).** `App\Exceptions\Handler` (bound in
+  `bootstrap/app.php` with `withSingletons`, after `withExceptions`, so the 403
+  `rbac_error` renderer still runs) overrides `convertExceptionToArray`: JSON
+  errors carry only `message`: 404 "Not found.", other 4xx their own message, 5xx
+  and non-HTTP exceptions "Server error.", whatever `APP_DEBUG` says (no
+  exception class, file, line, trace or model name). `.env.example` now ships
+  `APP_ENV=production`, `APP_DEBUG=false`. HTML error pages still depend on the
+  server's `APP_DEBUG` (and a stale `bootstrap/cache/config.php`). Test: `JsonErrorBodyTest`.
+- **Partner lookup (D21).** `GET org-admin/connections` no longer lists other
+  organizations. `POST org-admin/connections` (throttle `20,1`, keyed by user)
+  takes `partner_name`: after the `organization_management` F check it matches
+  `organizations.name` exactly; zero matches, several matches or the caller's own
+  org all redirect back with the same flash `error` ("No organization matches
+  that name. Check the exact spelling with your partner."), the typed name kept.
+  The connection is still created active at once and the partner sees it under
+  incoming; there is no invitation or accept step (needs a migration). MariaDB
+  compares names case-insensitively, sqlite case-sensitively; `organizations.name`
+  is not unique. The throttle has no named limiter, so its counter is shared with
+  the other unnamed `throttle:N,M` routes of the same user (e.g. e-mail resend).
+  Test: `ConnectionsLookupTest`.
+- **Another org's record answers 404 (O05).** In enforce mode `RbacAudit::fail()`
+  (after writing the `blocked` row, reason unchanged) throws
+  `NotFoundHttpException("Not found.")` when the reason is
+  `no_grant_or_not_project_member` or `project_unresolved` and the scoped project
+  is not a live (not soft-deleted) project of the acting org: another org's
+  project or quote, a missing id, a soft-deleted project, and a quote whose
+  `project_id` is NULL (a same-org NULL-project quote also answers 404 now; audit
+  mode already did). A same-org non-member keeps the 403 with the membership text.
+  Five controller sites answer 404 for the org mismatch only:
+  `RfqController::authorizeRfq`, `OrderApprovalController::authorizeApprovalAction`
+  (a wrong status keeps its 403), `OrgAdminController::removeRole`,
+  `destroyConnection` and `removeProjectMember`. `destroyConnection` lets only the
+  org that created a relationship (`from_org_id`) deactivate it, so the counterpart
+  org also gets 404 (only a crafted request reaches it). Audit mode is unchanged.
+  At each of those five org-mismatch branches (and only there) the controller calls
+  `DenialRecorder::record(request())` before the `abort(404)`, so a cross-org probe
+  still leaves exactly one `blocked` row (reason `controller_denied`), as the 403
+  did before; for a below-level actor in audit mode the middleware's `would_block`
+  row of the same request is upgraded in place instead and keeps its reason
+  `no_grant`;
+  a missing id, the own-org success path, the status 403 of the order site and the
+  hidden-project 404 in `RfqController::authorizeRfq` (same org, a project the
+  actor cannot see) are not recorded as 404s. The remaining 403 of
+  `authorizeApprovalAction` now reads "This order is no longer pending approval."
+  A delegate probing a foreign id leaves two rows (the `delegated_action` row of
+  the middleware plus the denial row). A user acting in their own org can probe
+  record ids: each id that exists in another org leaves a Blocked row in THEIR OWN
+  Enforcement Log and a missing id leaves none; that is the same signal the old 403
+  leaked, and the row holds no id or name of the foreign record (open item 16,
+  recommended: accept).
+  Tests: `CrossOrgNotFoundTest`, `CrossOrgDenialRowEdgesTest`.
+- **Delegation in the audit log (L06).** `DelegationService::audit()` writes
+  `delegation_granted` / `delegation_revoked` from `DelegationController::store`
+  and `destroy` and from `Admin\RbacController::revokeAdminDelegation`; a revoke
+  logs only when the delegation was active (an expired but still active one
+  counts), so a later revoke of an already revoked delegation is not attributed to
+  the later actor. `RbacAudit` writes `delegated_action` once per allowed request
+  on a mapped route when the user is acting as a principal. All writes are
+  fail-soft (`try/catch` plus `Log::error`): an audit failure never blocks a
+  delegation change or a request. Unmapped (open) routes are not logged. A
+  universal admin who also holds a delegation is evaluated as the principal first,
+  so such a request logs `delegated_action`. Test: `DelegationAuditTest`.
+- **Not built in this batch.** W10 (owner sees every project) is a separate later
+  batch and needs the client's written acknowledgement; sections 2, 3 and 5 still
+  describe membership-only project visibility.
 
 ## 5. Quote (estimate) visibility
 
@@ -426,7 +540,7 @@ after the real run: it must report nothing left to do.
 - **Identity**: user ids in env `UNIVERSAL_ADMIN_USER_IDS` (comma list, read into `config('rbac.universal_admin_user_ids')`), and the user must have a verified email. `App\Support\Rbac\UniversalAdmin::is()` is the only check.
 - **Where the bypass lives**: `PermissionService::checkPermission` and `Project::scopeVisibleTo` (permission and project visibility), `CurrentOrg` / session org resolution, `OrgSwitchController` (a listed user may switch into any org), and `CheckRole`, which admits listed ids to the `/admin` panel.
 - **Audit**: every bypass writes an `rbac_audit_logs` row with outcome `allowed_universal_admin` (deduplicated per request) and a line in the never-pruned `universal-admin-*.log` channel. A failure of either write is caught and falls back to `Log::error`; the bypass decision stays true.
-- **Lifted for listed users only** (each logged as `allowed_universal_admin` with reason `universal_org_delete`, `universal_ownership_transfer`, `universal_delegation_revoke`, `universal_api_token_revoke`): org delete and ownership transfer without being the owner (transfer replaces the sitting owners), revoking another user's delegation (same org) or API token (token owner is a member of the current org), and a quote's `staff_notes` visible to non-authors. Org delete wipes the org's `rbac_audit_logs` rows, so its trail survives in the `universal-admin` log file only. Everyone else keeps owner-only and own-record rules.
+- **Lifted for listed users only** (each logged as `allowed_universal_admin` with reason `universal_org_delete`, `universal_ownership_transfer`, `universal_delegation_revoke`, `universal_api_token_revoke`): org delete and ownership transfer without being the owner (transfer replaces the sitting owners), revoking another user's delegation (same org) or API token (token owner is a member of the current org), and a quote's `staff_notes` visible to non-authors. Org delete wipes the org's `rbac_audit_logs` rows, so its trail survives in the `universal-admin` log file only. A delegation revoked this way also writes a `delegation_revoked` row (section 4.6), but only when it was still active. Everyone else keeps owner-only and own-record rules.
 - **Role assignment (client audit 2)**: a listed user may assign a role to a non-member, hand ownership to an existing non-member, and assign Platform or Seller roles from the org screens; logged with reasons `universal_assign_non_member`, `universal_transfer_non_member`, `universal_assign_restricted_role` (section 4.5). Not lifted: delegating to a non-member, accepting someone else's invite (that is about the INVITEE accepting). Separately, an invite created by a listed, verified user stays valid at accept without the inviter holding a role in the org, while they are listed and verified (section 4.5).
 - **Unchanged**: SoD, seller-never-sees-buyer-project scoping, personal data scoped by `user_id` (carts, pallets, saved lists; customers are org data, see 10c), approval business rules (including the self-approval guard of section 7: a listed user cannot approve their own order while another approver exists); a listed user is not in any approver pool; delegation is not transitive; users not on the list behave exactly as before.
 - **UI**: listed users see 'Platform admin panel' and 'Enforcement mode' links in the user navbar (`$navUniversalAdmin`). The org audit-log Enforcement tab labels rows by stored outcome (Blocked / Would Block / Platform admin / Auto-approved / Self-approved (sole approver)), shows the row's `reason` in a Details column (underscores as spaces), and its banner reflects the real `rbac_mode` and `rbac.enforce_batches`.
@@ -541,8 +655,54 @@ assume rep-agency seller authorization is enforced until this is fixed.
     page. `InviteInviterAuthorityTest::test_the_guest_register_link_is_deliberately_unchanged`
     pins today's behaviour and must be flipped if this is approved. Decision
     pending with the human; not fixed by client audit 2 Phase A.
+14. **Signup verification e-mail (client audit 2, B06(a)).** The code sends exactly
+    one `VerifyEmail` per registration (proof test `RegistrationTest`), so a missing
+    mail is a server-side cause (mailer config, SMTP, logs). Two facts to know
+    before touching it: (1) `Registered` has two `SendEmailVerificationNotification`
+    listeners (the app `EventServiceProvider::$listen` and the framework provider's
+    own `configureEmailVerification()`); the per-request guard in
+    `User::sendEmailVerificationNotification` is what keeps it at one mail, so do
+    not remove the guard without removing the duplicate listener; (2) the guard
+    marks the user as sent BEFORE the send, and a transport exception is caught
+    nowhere: if the mailer throws at signup, `register` ends in a 500 after the
+    user, organization and roles exist and no mail is sent (the user recovers
+    through login and 'resend'). Hardening (catch and log the failure) is a
+    decision pending with the human, not done.
+15. **Existence signal on route-model-bound routes (client audit 2, batch 1).**
+    `SubstituteBindings` runs before `RbacAudit`, so on routes bound to a model
+    (`{rfq}`, `{order}`, `{userOrgRole}`, `{projectMember}`, `{orgRelationship}`) a
+    below-level actor in enforce mode gets 403 for an id that exists in ANY org and
+    404 for an id that does not exist. The signal is independent of the record's
+    org and existed before O05. Fixing it means running `RbacAudit` before
+    `SubstituteBindings`, an engine-wide change that needs its own plan and a
+    Verifier pass. Decision pending with the human; not fixed.
+16. **Cross-org id probing leaves a row in the prober's own log (client audit 2,
+    batch 1, Verifier R1).** A user acting in their own org can try record ids on
+    the five controller sites (section 4.6). Each id that exists in another org
+    answers 404 and leaves one Blocked row in THEIR OWN org's Enforcement Log; an
+    id that does not exist leaves none (route binding answers 404 first). So the
+    row count tells the prober which ids exist elsewhere. This is the same signal
+    the old 403 gave, and the row contains no id, name or other data of the foreign
+    record. Recommended: accept. Decision pending with the human; not changed.
 
 ## Change log (newest first)
+
+- 2026-10-27 - Client audit 2, Phase B batch 1, verifier amendment V1 (PLAN 10.13):
+  the five controller 404s for another org's record call `DenialRecorder` before the
+  abort, so a cross-org probe again leaves one `blocked` row (reason
+  `controller_denied`; `no_grant` for a below-level actor in audit mode)
+  (sections 4.3, 4.4, 4.6); the order site's 403 text is "This order is no longer
+  pending approval." No migration, no route or route map change.
+
+- 2026-10-26 - Client audit 2, Phase B batch 1 (N01, S13, D21, O05, L06; B06(a) is
+  a proof test with no code change; W10 is a later batch): SoD is skipped for the
+  only member of an org; JSON error bodies never carry debug data; connections are
+  created from an exact partner name with a throttle and no org list; another org's
+  record, project or quote answers 404 (middleware in enforce mode plus five
+  controller sites); delegation grants, revokes and delegated actions reach the
+  audit log (section 4.6). Open items 14 and 15 added. No migration, no route or
+  route map change (the `route-list.json` of the audit pack only gains the
+  throttle middleware on POST org-admin/connections).
 
 - 2026-10-26 - Client audit 2, Phase A verifier amendments: an unused
   existing-account invite is valid at review and accept only while its inviter is

@@ -128,16 +128,11 @@
                         @csrf
 
                         <div class="mb-3">
-                            <label class="form-label small fw-semibold">Partner Organization</label>
-                            <select name="to_org_id" class="form-select form-select-sm @error('to_org_id') is-invalid @enderror" required>
-                                <option value="">— Select organization —</option>
-                                @foreach ($allOrgs as $o)
-                                    <option value="{{ $o->id }}" {{ old('to_org_id') == $o->id ? 'selected' : '' }}>
-                                        {{ $o->name }}{{ $o->org_type ? ' (' . strtoupper($o->org_type) . ')' : '' }}
-                                    </option>
-                                @endforeach
-                            </select>
-                            @error('to_org_id')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                            <label class="form-label small fw-semibold">Partner organization name</label>
+                            <input type="text" name="partner_name" value="{{ old('partner_name') }}" maxlength="255"
+                                   class="form-control form-control-sm @error('partner_name') is-invalid @enderror" required>
+                            @error('partner_name')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                            <div class="form-text small">Enter the exact name of the organization. They will see the connection under incoming.</div>
                         </div>
 
                         <div class="mb-3">

@@ -14,6 +14,7 @@ use App\Services\Rbac\ApprovalRoutingService;
 use App\Services\Rbac\OrgRelationshipService;
 use App\Services\Rbac\PermissionService;
 use App\Support\Rbac\CurrentOrg;
+use App\Support\Rbac\DenialRecorder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -258,7 +259,11 @@ class RfqController extends Controller
         $userId = (int) Auth::id();
         $orgId = $this->currentOrgId();
 
-        abort_if($orgId === 0 || (int) $rfq->org_id !== $orgId, 403);
+        abort_if($orgId === 0, 403);
+        if ((int) $rfq->org_id !== $orgId) {
+            DenialRecorder::record(request());
+            abort(404);
+        }
 
         if ($rfq->project_id !== null) {
             abort_unless(

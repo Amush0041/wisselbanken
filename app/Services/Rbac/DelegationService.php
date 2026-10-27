@@ -2,9 +2,11 @@
 
 namespace App\Services\Rbac;
 
+use App\Models\Rbac\AuditLog;
 use App\Models\Rbac\Delegation;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Manages time-bound delegations: User B can act on behalf of User A for a limited period.
@@ -45,6 +47,28 @@ class DelegationService
     public function revoke(int $delegationId): void
     {
         Delegation::where('id', $delegationId)->update(['is_active' => false]);
+    }
+
+    /**
+     * Audit row for a grant or revoke. Fail-soft: a failing audit write must never block the delegation change.
+     */
+    public function audit(string $outcome, Delegation $delegation, int $actorId, string $level): void
+    {
+        try {
+            $names = DB::table('users')->whereIn('id', [$delegation->to_user_id, $delegation->from_user_id])->pluck('name', 'id');
+
+            AuditLog::event($outcome, $actorId, (int) $delegation->org_id, 'delegation_and_impersonation', $level, sprintf(
+                'delegate %s (#%d) for %s (#%d), %s to %s',
+                $names[$delegation->to_user_id] ?? 'unknown',
+                $delegation->to_user_id,
+                $names[$delegation->from_user_id] ?? 'unknown',
+                $delegation->from_user_id,
+                $delegation->starts_at->toDateTimeString(),
+                $delegation->expires_at->toDateTimeString(),
+            ));
+        } catch (\Throwable $e) {
+            Log::error('delegation audit row write failed', ['outcome' => $outcome, 'delegation_id' => $delegation->id, 'error' => get_class($e)]);
+        }
     }
 
     /**

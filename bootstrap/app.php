@@ -52,4 +52,8 @@ return Application::configure(basePath: dirname(__DIR__))
 
             return response()->view('errors.rbac-403', ['message' => $message], 403);
         });
-    })->create();
+    })
+    ->withSingletons([
+        \Illuminate\Contracts\Debug\ExceptionHandler::class => \App\Exceptions\Handler::class,
+    ])
+    ->create();

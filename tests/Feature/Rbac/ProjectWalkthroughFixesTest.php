@@ -127,7 +127,7 @@ class ProjectWalkthroughFixesTest extends ProjectTestCase
             $r->assertSessionMissing('error', self::BLOCKED);
         }
         $this->asJson($eng, 'DELETE', "projects/$id")->assertForbidden();
-        $this->asJson($this->outsider, 'DELETE', "projects/$id")->assertForbidden();
+        $this->asJson($this->outsider, 'DELETE', "projects/$id")->assertNotFound();
         $this->asJson($this->stranger, 'DELETE', "projects/$id")->assertForbidden();
         $this->assertNull(DB::table('projects')->where('id', $id)->value('deleted_at'));
 
@@ -174,7 +174,7 @@ class ProjectWalkthroughFixesTest extends ProjectTestCase
             $this->assertNotNull($row['parent_project_id']);
             $this->assertNotNull($row['parent_project_name']);
         }
-        $this->asJson($this->owner, 'GET', "quotes/{$this->q0}/details")->assertForbidden();
+        $this->asJson($this->owner, 'GET', "quotes/{$this->q0}/details")->assertNotFound();
     }
 
     public function test_p2_a_user_who_cannot_see_the_quote_never_gets_the_project_name(): void
@@ -185,7 +185,7 @@ class ProjectWalkthroughFixesTest extends ProjectTestCase
             $this->assertStringNotContainsString('parent_project_name":"P1', $body);
 
             $d = $this->asJson($u, 'GET', "quotes/{$this->q1}/details");
-            $d->assertForbidden();
+            $u === $this->outsider ? $d->assertNotFound() : $d->assertForbidden();
             $this->assertStringNotContainsString('P1', $d->getContent());
         }
         $other = $this->asJson($this->outsider, 'GET', 'quotes/list')->json('quotes');

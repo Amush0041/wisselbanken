@@ -241,7 +241,7 @@ class AuditFindingsRound2Test extends ProjectTestCase
         $rowB = (int) DB::table('user_org_roles')->where('user_id', $this->outsider->id)->value('id');
         $before = $this->snapshot();
 
-        $this->req2($this->ownerA, 'DELETE', "org-admin/roles/$rowB")->assertForbidden();
+        $this->req2($this->ownerA, 'DELETE', "org-admin/roles/$rowB")->assertNotFound();
         $this->assertSame($before, $this->snapshot());
     }
 

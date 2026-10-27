@@ -144,9 +144,9 @@ class ProjectWritePathsTest extends ProjectTestCase
 
         $this->req($this->est, 'GET', "projects/{$this->p1}")->assertOk();
         $this->req($this->viewer, 'GET', "projects/{$this->p1}")->assertOk();
-        $this->req($this->outsider, 'GET', "projects/{$this->p1}")->assertStatus($denied);
+        $this->req($this->outsider, 'GET', "projects/{$this->p1}")->assertNotFound();
         $this->req($this->stranger, 'GET', "projects/{$this->p1}")->assertStatus($denied);
-        $this->req($this->est, 'GET', "projects/{$this->p3}")->assertStatus($denied);
+        $this->req($this->est, 'GET', "projects/{$this->p3}")->assertNotFound();
         $this->req($this->est, 'GET', "projects/{$this->p2}")->assertStatus($denied);
         $this->anon('GET', "projects/{$this->p1}")->assertUnauthorized();
 
@@ -291,10 +291,10 @@ class ProjectWritePathsTest extends ProjectTestCase
         $denied = $mode === 'enforce' ? 403 : 404;
         $payload = ['name' => 'Hacked', 'status' => 'lost'];
 
-        $this->req($this->outsider, 'PUT', "projects/{$this->p1}", $payload)->assertStatus($denied);
+        $this->req($this->outsider, 'PUT', "projects/{$this->p1}", $payload)->assertNotFound();
         $this->req($this->stranger, 'PUT', "projects/{$this->p1}", $payload)->assertStatus($denied);
         $this->req($this->est, 'PUT', "projects/{$this->p2}", $payload)->assertStatus($denied);
-        $this->req($this->est, 'PUT', "projects/{$this->p3}", $payload)->assertStatus($denied);
+        $this->req($this->est, 'PUT', "projects/{$this->p3}", $payload)->assertNotFound();
         $this->legacyMember($this->q1, $this->stranger, $this->orgA);
         $this->req($this->stranger, 'PUT', "projects/{$this->p1}", $payload)->assertStatus($denied);
         $this->assertSame(['P1', 'P2', 'P3'], [DB::table('projects')->where('id', $this->p1)->value('name'), DB::table('projects')->where('id', $this->p2)->value('name'), DB::table('projects')->where('id', $this->p3)->value('name')]);
@@ -370,9 +370,9 @@ class ProjectWritePathsTest extends ProjectTestCase
         $denied = $mode === 'enforce' ? 403 : 404;
         $id = $this->freshProject();
 
-        $this->req($this->outsider, 'DELETE', "projects/$id")->assertStatus($denied);
+        $this->req($this->outsider, 'DELETE', "projects/$id")->assertNotFound();
         $this->req($this->stranger, 'DELETE', "projects/$id")->assertStatus($denied);
-        $this->req($this->est, 'DELETE', "projects/{$this->p3}")->assertStatus($denied);
+        $this->req($this->est, 'DELETE', "projects/{$this->p3}")->assertNotFound();
         $this->assertNull(DB::table('projects')->where('id', $id)->value('deleted_at'));
         $this->assertNull(DB::table('projects')->where('id', $this->p3)->value('deleted_at'));
 
@@ -487,9 +487,9 @@ class ProjectWritePathsTest extends ProjectTestCase
 
         // stranger holds estimator (F) in org A but is not on P1; outsider holds F in org B
         $this->req($this->stranger, 'POST', "projects/{$this->p1}/members", ['user_id' => $newcomer->id])->assertStatus($denied);
-        $this->req($this->outsider, 'POST', "projects/{$this->p1}/members", ['user_id' => $this->outsider->id])->assertStatus($denied);
+        $this->req($this->outsider, 'POST', "projects/{$this->p1}/members", ['user_id' => $this->outsider->id])->assertNotFound();
         $this->req($this->est, 'POST', "projects/{$this->p2}/members", ['user_id' => $newcomer->id])->assertStatus($denied);
-        $this->req($this->est, 'POST', "projects/{$this->p3}/members", ['user_id' => $newcomer->id])->assertStatus($denied);
+        $this->req($this->est, 'POST', "projects/{$this->p3}/members", ['user_id' => $newcomer->id])->assertNotFound();
         $this->legacyMember($this->q1, $this->stranger, $this->orgA);
         $this->req($this->stranger, 'POST', "projects/{$this->p1}/members", ['user_id' => $newcomer->id])->assertStatus($denied);
 
@@ -561,7 +561,7 @@ class ProjectWritePathsTest extends ProjectTestCase
             $this->req($user, 'DELETE', $uri)->assertForbidden();
         }
         $this->req($this->stranger, 'DELETE', $uri)->assertStatus($denied);
-        $this->req($this->outsider, 'DELETE', $uri)->assertStatus($denied);
+        $this->req($this->outsider, 'DELETE', $uri)->assertNotFound();
         $this->anon('DELETE', $uri)->assertUnauthorized();
         $this->assertTrue($this->activeMember($this->p1, $this->viewer->id));
     }
@@ -617,8 +617,8 @@ class ProjectWritePathsTest extends ProjectTestCase
         $before = DB::table('quotes')->count();
 
         $this->req($this->est, 'POST', "projects/{$this->p2}/quotes", ['customer_id' => $c])->assertStatus($denied);     // same org, not a member
-        $this->req($this->est, 'POST', "projects/{$this->p3}/quotes", ['customer_id' => $c])->assertStatus($denied);     // other org
-        $this->req($this->outsider, 'POST', "projects/{$this->p1}/quotes", ['customer_id' => $c])->assertStatus($denied);
+        $this->req($this->est, 'POST', "projects/{$this->p3}/quotes", ['customer_id' => $c])->assertNotFound();     // other org
+        $this->req($this->outsider, 'POST', "projects/{$this->p1}/quotes", ['customer_id' => $c])->assertNotFound();
         $this->req($this->stranger, 'POST', "projects/{$this->p1}/quotes", ['customer_id' => $c])->assertStatus($denied);
         $this->legacyMember($this->q1, $this->stranger, $this->orgA);
         $this->req($this->stranger, 'POST', "projects/{$this->p1}/quotes", ['customer_id' => $c])->assertStatus($denied);
@@ -673,7 +673,7 @@ class ProjectWritePathsTest extends ProjectTestCase
         $orgB = (int) DB::table('project_members')->where('project_id', $this->p3)->where('user_id', $this->outsider->id)->value('id');
         $orgA = (int) DB::table('project_members')->where('project_id', $this->p1)->where('user_id', $this->viewer->id)->value('id');
 
-        $this->req($this->est, 'DELETE', route('org-admin.projects.members.destroy', $orgB))->assertForbidden();
+        $this->req($this->est, 'DELETE', route('org-admin.projects.members.destroy', $orgB))->assertNotFound();
         $this->assertTrue($this->activeMember($this->p3, $this->outsider->id));
 
         $this->actingAs($this->est)->delete(route('org-admin.projects.members.destroy', $orgA))->assertSessionHas('success', 'Member removed from project.');
@@ -739,7 +739,7 @@ class ProjectWritePathsTest extends ProjectTestCase
         $before = DB::table('quotes')->count();
 
         $this->req($this->est, 'POST', "projects/{$this->p2}/quotes/create-from-list/$mine")->assertStatus($denied);
-        $this->req($this->est, 'POST', "projects/{$this->p3}/quotes/create-from-list/$mine")->assertStatus($denied);
+        $this->req($this->est, 'POST', "projects/{$this->p3}/quotes/create-from-list/$mine")->assertNotFound();
         DB::table('projects')->where('id', $this->p1)->update(['deleted_at' => now()]);
         $this->req($this->est, 'POST', "projects/{$this->p1}/quotes/create-from-list/$mine")->assertNotFound();
         $this->assertSame($before, DB::table('quotes')->count());
@@ -851,10 +851,10 @@ class ProjectWritePathsTest extends ProjectTestCase
         $this->setMode($mode);
         $denied = $mode === 'enforce' ? 403 : 404;
 
-        $this->req($this->outsider, 'POST', "projects/{$this->p1}/crosswalk", ['plan_line_code' => 'X'])->assertStatus($denied);
+        $this->req($this->outsider, 'POST', "projects/{$this->p1}/crosswalk", ['plan_line_code' => 'X'])->assertNotFound();
         $this->req($this->stranger, 'POST', "projects/{$this->p1}/crosswalk", ['plan_line_code' => 'X'])->assertStatus($denied);
         $this->req($this->est, 'POST', "projects/{$this->p2}/crosswalk", ['plan_line_code' => 'X'])->assertStatus($denied);
-        $this->req($this->est, 'POST', "projects/{$this->p3}/crosswalk", ['plan_line_code' => 'X'])->assertStatus($denied);
+        $this->req($this->est, 'POST', "projects/{$this->p3}/crosswalk", ['plan_line_code' => 'X'])->assertNotFound();
         $this->legacyMember($this->q1, $this->stranger, $this->orgA);
         $this->req($this->stranger, 'POST', "projects/{$this->p1}/crosswalk", ['plan_line_code' => 'X'])->assertStatus($denied);
         DB::table('projects')->where('id', $this->p1)->update(['deleted_at' => now()]);
@@ -968,10 +968,10 @@ class ProjectWritePathsTest extends ProjectTestCase
 
         $this->req($this->est, 'GET', "projects/{$this->q1}/workspace")->assertStatus(301)->assertRedirect(route('projects.show', $this->p1));
         $this->req($this->est, 'GET', "projects/{$this->q3}/workspace")->assertStatus($denied);        // quote of P2, est not a member
-        $this->req($this->est, 'GET', "projects/{$this->q4}/workspace")->assertStatus($denied);        // quote of another org's project
-        $this->req($this->outsider, 'GET', "projects/{$this->q1}/workspace")->assertStatus($denied);
+        $this->req($this->est, 'GET', "projects/{$this->q4}/workspace")->assertNotFound();        // quote of another org's project
+        $this->req($this->outsider, 'GET', "projects/{$this->q1}/workspace")->assertNotFound();
         $this->req($this->stranger, 'GET', "projects/{$this->q1}/workspace")->assertStatus($denied);
-        $this->req($this->est, 'GET', "projects/{$this->q0}/workspace")->assertStatus($denied);        // NULL project: unresolved
+        $this->req($this->est, 'GET', "projects/{$this->q0}/workspace")->assertNotFound();        // NULL project: unresolved
         $this->req($this->est, 'GET', 'projects/999999/workspace')->assertNotFound();
         $this->anon('GET', "projects/{$this->q1}/workspace")->assertUnauthorized();
     }

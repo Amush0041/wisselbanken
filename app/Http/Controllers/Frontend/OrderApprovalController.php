@@ -12,6 +12,7 @@ use App\Services\Rbac\ApprovalRoutingService;
 use App\Services\Rbac\DelegationService;
 use App\Services\Rbac\PermissionService;
 use App\Support\Rbac\CurrentOrg;
+use App\Support\Rbac\DenialRecorder;
 
 /**
  * Lets users with approval_authority:A view and act on orders in
@@ -87,10 +88,14 @@ class OrderApprovalController extends Controller
     {
         $orgId = CurrentOrg::sessionOrg((int) Auth::id());
 
+        if ((int) $order->org_id !== (int) $orgId) {
+            DenialRecorder::record(request());
+            abort(404);
+        }
         abort_if(
-            (int) $order->org_id !== (int) $orgId || $order->status !== 'pending_approval',
+            $order->status !== 'pending_approval',
             403,
-            'This order is not in your organisation or is no longer pending approval.'
+            'This order is no longer pending approval.'
         );
     }
 

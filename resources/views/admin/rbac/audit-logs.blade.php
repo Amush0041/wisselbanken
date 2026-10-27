@@ -33,6 +33,9 @@
                         <option value="allowed_universal_admin" @selected(request('outcome')==='allowed_universal_admin')>Allowed (platform admin)</option>
                         <option value="auto_approved" @selected(request('outcome')==='auto_approved')>Auto-approved</option>
                         <option value="self_approved" @selected(request('outcome')==='self_approved')>Self-approved (sole approver)</option>
+                        <option value="delegation_granted" @selected(request('outcome')==='delegation_granted')>Delegation granted</option>
+                        <option value="delegation_revoked" @selected(request('outcome')==='delegation_revoked')>Delegation revoked</option>
+                        <option value="delegated_action" @selected(request('outcome')==='delegated_action')>Delegated action</option>
                     </select>
                 </div>
                 <div class="col-md-4">
@@ -121,6 +124,12 @@
                                         <span class="badge bg-success">Auto-approved</span>
                                     @elseif ($log->outcome === 'self_approved')
                                         <span class="badge bg-success">Self-approved (sole approver)</span>
+                                    @elseif ($log->outcome === 'delegation_granted')
+                                        <span class="badge bg-success">Delegation granted</span>
+                                    @elseif ($log->outcome === 'delegation_revoked')
+                                        <span class="badge bg-secondary">Delegation revoked</span>
+                                    @elseif ($log->outcome === 'delegated_action')
+                                        <span class="badge bg-info">Delegated action</span>
                                     @else
                                         <span class="badge bg-warning text-dark">Would Block</span>
                                     @endif
@@ -153,7 +162,7 @@
     {{-- Footer note --}}
     <div class="mt-3 d-flex align-items-center gap-2 text-muted small">
         <i class="ti ti-lock"></i>
-        <span>Audit logs are immutable once written. <code>would_block</code> and <code>blocked</code> outcomes are recorded, as are universal-admin bypasses (<code>allowed_universal_admin</code>); other permitted requests are not logged.</span>
+        <span>Audit logs are immutable once written. <code>would_block</code> and <code>blocked</code> outcomes are recorded, as are universal-admin bypasses (<code>allowed_universal_admin</code>), auto-approved and self-approved orders, and delegation events (<code>delegation_granted</code>, <code>delegation_revoked</code>, <code>delegated_action</code>); other permitted requests are not logged.</span>
     </div>
 
 </div>

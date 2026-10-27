@@ -113,6 +113,8 @@
             align-items:center; justify-content:center; font-size:.6rem;
         }
         .org-type-card.selected .ot-check { display:flex; }
+        .org-type-grid.is-invalid .org-type-card { border-color:var(--bs-danger); }
+        .org-type-grid + .invalid-feedback { margin:-.5rem 0 1rem; }
 
         /* Step panels */
         .step-panel { display:none; }
@@ -342,38 +344,71 @@
         let currentStep = 1;
         let selectedOrgType = '{{ old("org_type", "") }}';
 
+        // Reuse a server-rendered .invalid-feedback when there is one, so a field never shows two messages.
+        function showError(field, message) {
+            field.classList.add('is-invalid');
+            const holder = field.closest('.input-group') || field;
+            let fb = holder.nextElementSibling;
+            if (!fb || !fb.classList.contains('invalid-feedback')) {
+                fb = document.createElement('span');
+                fb.className = 'invalid-feedback';
+                holder.after(fb);
+            }
+            if (fb.classList.contains('d-none') || !fb.textContent.trim()) fb.textContent = message;
+            fb.classList.remove('d-none');
+        }
+
+        function clearError(field) {
+            field.classList.remove('is-invalid');
+            const fb = (field.closest('.input-group') || field).nextElementSibling;
+            if (fb && fb.classList.contains('invalid-feedback')) fb.classList.add('d-none');
+        }
+
+        const orgTypeGrid = document.getElementById('orgTypeGrid');
+        const teamSizeSelect = document.getElementById('team_size');
+        const pwdConfirmInput = document.getElementById('password-confirm');
+
+        teamSizeSelect.addEventListener('change', () => clearError(teamSizeSelect));
+        ['name', 'email', 'password', 'password-confirm'].forEach(id => {
+            const input = document.getElementById(id);
+            input.addEventListener('input', () => {
+                clearError(input);
+                if (id === 'password') clearError(pwdConfirmInput);
+            });
+        });
+
         window.selectOrgType = function(card, slug) {
             document.querySelectorAll('.org-type-card').forEach(c => c.classList.remove('selected'));
             card.classList.add('selected');
             card.querySelector('input').checked = true;
             selectedOrgType = slug;
+            clearError(orgTypeGrid);
         };
 
         window.goStep = function(n) {
             // Validate before advancing
             if (n === 2 && currentStep === 1) {
-                if (!document.querySelector('input[name=org_type]:checked')) {
-                    alert('Please select an organization type before continuing.');
-                    return;
-                }
-                if (!document.getElementById('team_size').value) {
-                    alert('Please select a team size before continuing.');
-                    return;
-                }
+                const orgOk = !!document.querySelector('input[name=org_type]:checked');
+                const sizeOk = !!teamSizeSelect.value;
+                if (!orgOk) showError(orgTypeGrid, 'Please select an organization type before continuing.');
+                if (!sizeOk) showError(teamSizeSelect, 'Please select a team size before continuing.');
+                if (!orgOk || !sizeOk) return;
             }
             if (n === 3 && currentStep === 2) {
-                const name = document.getElementById('name').value.trim();
-                const email = document.getElementById('email').value.trim();
-                const pwd = document.getElementById('password').value;
-                const pwdC = document.getElementById('password-confirm').value;
-                if (!name || !email || !pwd || !pwdC) {
-                    alert('Please fill in all required fields.');
-                    return;
-                }
-                if (pwd !== pwdC) {
-                    alert('Passwords do not match.');
-                    return;
-                }
+                const nameInput = document.getElementById('name');
+                const emailInput = document.getElementById('email');
+                const pwdInput = document.getElementById('password');
+                const name = nameInput.value.trim();
+                const email = emailInput.value.trim();
+                const pwd = pwdInput.value;
+                const pwdC = pwdConfirmInput.value;
+                let valid = true;
+                if (!name)  { showError(nameInput, 'Please enter your name.'); valid = false; }
+                if (!email) { showError(emailInput, 'Please enter your work email.'); valid = false; }
+                if (!pwd)   { showError(pwdInput, 'Please enter a password.'); valid = false; }
+                if (!pwdC)  { showError(pwdConfirmInput, 'Please confirm your password.'); valid = false; }
+                else if (pwd && pwd !== pwdC) { showError(pwdConfirmInput, 'Passwords do not match.'); valid = false; }
+                if (!valid) return;
                 // Update summary panel
                 document.getElementById('summaryName').textContent  = name;
                 document.getElementById('summaryEmail').textContent = email;

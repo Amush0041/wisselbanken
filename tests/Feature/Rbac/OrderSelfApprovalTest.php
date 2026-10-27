@@ -298,8 +298,8 @@ class OrderSelfApprovalTest extends ProjectTestCase
         $outsider = $this->mkUser($this->orgB, 'estimator');
         $order = $this->order($outsider, $this->orgB->id);
 
-        $this->act($this->mitch, 'approve', $order)->assertForbidden();
-        $this->act($this->mitch, 'reject', $order)->assertForbidden();
+        $this->act($this->mitch, 'approve', $order)->assertNotFound();
+        $this->act($this->mitch, 'reject', $order)->assertNotFound();
 
         $this->assertSame('pending_approval', $this->row($order)->status);
     }

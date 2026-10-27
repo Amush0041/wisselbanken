@@ -257,7 +257,7 @@ class ProjectMembershipTest extends ProjectTestCase
 
         $r = $this->actingAs($this->owner)->getJson("probe/q/{$this->q0}");
 
-        $mode === 'audit' ? $r->assertOk() : $r->assertForbidden();
+        $mode === 'audit' ? $r->assertOk() : $r->assertNotFound();
         $row = $this->lastRow();
         $this->assertSame('project_unresolved', $row->reason);
         $this->assertSame($mode === 'audit' ? 'would_block' : 'blocked', $row->outcome);
@@ -273,7 +273,7 @@ class ProjectMembershipTest extends ProjectTestCase
 
         $r = $this->actingAs($this->est)->getJson('probe/q/99999');
 
-        $mode === 'audit' ? $r->assertOk() : $r->assertForbidden();
+        $mode === 'audit' ? $r->assertOk() : $r->assertNotFound();
         $row = $this->lastRow();
         $this->assertSame('project_unresolved', $row->reason);
         $this->assertSame(99999, (int) $row->quote_id);
@@ -326,7 +326,7 @@ class ProjectMembershipTest extends ProjectTestCase
         $this->setMode('enforce');
         $this->noCheckPermission();
 
-        $this->actingAs($this->owner)->getJson("probe/qm/{$this->q0}")->assertForbidden();
+        $this->actingAs($this->owner)->getJson("probe/qm/{$this->q0}")->assertNotFound();
 
         $this->assertSame('project_unresolved', $this->lastRow()->reason);
     }
@@ -388,7 +388,7 @@ class ProjectMembershipTest extends ProjectTestCase
         $this->noCheckPermission();
 
         $json = $this->actingAs($this->est)->getJson($uri);
-        $mode === 'audit' ? $json->assertOk() : $json->assertForbidden();
+        $mode === 'audit' ? $json->assertOk() : $json->assertNotFound();
 
         $row = $this->lastRow();
         $this->assertSame('project_unresolved', $row->reason);
@@ -397,7 +397,7 @@ class ProjectMembershipTest extends ProjectTestCase
         $this->assertNull($row->quote_id);
 
         if ($mode === 'enforce') {
-            $this->actingAs($this->est)->from('/previous')->get($uri)->assertStatus(302)->assertRedirect('/previous');
+            $this->actingAs($this->est)->from('/previous')->get($uri)->assertNotFound();
         }
     }
 
@@ -469,8 +469,8 @@ class ProjectMembershipTest extends ProjectTestCase
     {
         $this->setMode('enforce');
 
-        $this->actingAs($this->outsider)->getJson("probe/q/{$this->q1}")->assertForbidden();
-        $this->actingAs($this->est)->getJson("probe/q/{$this->q4}")->assertForbidden();
+        $this->actingAs($this->outsider)->getJson("probe/q/{$this->q1}")->assertNotFound();
+        $this->actingAs($this->est)->getJson("probe/q/{$this->q4}")->assertNotFound();
 
         $this->assertSame(2, AuditLog::count());
     }

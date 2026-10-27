@@ -86,7 +86,7 @@ class DelegationController extends Controller
             'Only active members of your organization can be delegates.'
         );
 
-        $this->delegations->grant(
+        $delegation = $this->delegations->grant(
             grantedBy: Auth::id(),
             fromUserId: Auth::id(),
             toUserId: (int) $data['to_user_id'],
@@ -94,6 +94,7 @@ class DelegationController extends Controller
             startsAt: Carbon::parse($data['starts_at']),
             expiresAt: Carbon::parse($data['expires_at']),
         );
+        $this->delegations->audit('delegation_granted', $delegation, (int) Auth::id(), 'O');
 
         // Peel-off suggestion (plan §6.3): if the delegator holds roles the delegatee does
         // not yet have permanently, suggest converting the delegation into a formal role
@@ -133,7 +134,11 @@ class DelegationController extends Controller
             UniversalAdmin::recordBypass((int) Auth::id(), (int) $org->id, 'delegation_and_impersonation', 'O', null, 'universal_delegation_revoke');
         }
 
+        $wasActive = (bool) $delegation->is_active;
         $this->delegations->revoke($delegation->id);
+        if ($wasActive) {
+            $this->delegations->audit('delegation_revoked', $delegation, (int) Auth::id(), 'O');
+        }
 
         return back()->with('success', 'Delegation revoked.');
     }

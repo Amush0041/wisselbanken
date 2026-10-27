@@ -137,7 +137,7 @@ Route::group(['middleware' => ['auth','verified','checkRole:user']], function() 
     Route::post('org-admin/roles-list/create', [\App\Http\Controllers\Frontend\OrgAdminController::class, 'storeRole'])->name('org-admin.roles.store');
     /* Org Connections (org-to-org relationships — plan §4.5) */
     Route::get('org-admin/connections', [\App\Http\Controllers\Frontend\OrgAdminController::class, 'connections'])->name('org-admin.connections.index');
-    Route::post('org-admin/connections', [\App\Http\Controllers\Frontend\OrgAdminController::class, 'storeConnection'])->name('org-admin.connections.store');
+    Route::post('org-admin/connections', [\App\Http\Controllers\Frontend\OrgAdminController::class, 'storeConnection'])->name('org-admin.connections.store')->middleware('throttle:20,1');
     Route::delete('org-admin/connections/{orgRelationship}', [\App\Http\Controllers\Frontend\OrgAdminController::class, 'destroyConnection'])->name('org-admin.connections.destroy');
     /* Project Members (quote-scoped access — plan §3.5) */
     Route::get('org-admin/projects', [\App\Http\Controllers\Frontend\OrgAdminController::class, 'projects'])->name('org-admin.projects.index');

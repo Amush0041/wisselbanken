@@ -26,6 +26,13 @@ class SodTest extends RbacTestCase
         $this->service = app(RoleAssignmentService::class);
         $this->org     = Organization::create(['name' => 'Test Org', 'org_type' => 'subcontractor', 'team_size' => 'solo']);
         $this->admin   = User::factory()->create();
+
+        // A second active member, so the org is not a sole-member org (which SoD skips).
+        UserOrgRole::create([
+            'user_id' => User::factory()->create()->id, 'org_id' => $this->org->id,
+            'role_id' => Role::where('slug', 'viewer_read_only')->firstOrFail()->id,
+            'assigned_at' => now(), 'is_active' => true,
+        ]);
     }
 
     public function test_assignment_blocked_when_sod_conflict_exists(): void

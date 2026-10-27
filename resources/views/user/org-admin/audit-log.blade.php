@@ -278,6 +278,12 @@
                                         <span class="badge bg-label-success" style="font-size:.65rem">Auto-approved</span>
                                     @elseif ($entry->outcome === 'self_approved')
                                         <span class="badge bg-label-success" style="font-size:.65rem">Self-approved (sole approver)</span>
+                                    @elseif ($entry->outcome === 'delegation_granted')
+                                        <span class="badge bg-label-success" style="font-size:.65rem">Delegation granted</span>
+                                    @elseif ($entry->outcome === 'delegation_revoked')
+                                        <span class="badge bg-label-secondary" style="font-size:.65rem">Delegation revoked</span>
+                                    @elseif ($entry->outcome === 'delegated_action')
+                                        <span class="badge bg-label-info" style="font-size:.65rem">Delegated action</span>
                                     @else
                                         <span class="badge bg-label-secondary" style="font-size:.65rem">{{ $entry->outcome }}</span>
                                     @endif

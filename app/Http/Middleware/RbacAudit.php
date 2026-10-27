@@ -2,16 +2,21 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Project;
 use App\Models\Quote;
 use App\Models\Rbac\AuditLog;
 use App\Models\Rbac\RbacSetting;
+use App\Services\Rbac\DelegationService;
 use App\Services\Rbac\PermissionService;
 use App\Support\Rbac\CurrentOrg;
 use Closure;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /**
  * The single RBAC insertion point (plan §5.2, Stage B). It sits after authentication and
@@ -24,8 +29,10 @@ use Symfony\Component\HttpFoundation\Response;
  */
 class RbacAudit
 {
-    public function __construct(private readonly PermissionService $permissions)
-    {
+    public function __construct(
+        private readonly PermissionService $permissions,
+        private readonly DelegationService $delegations,
+    ) {
     }
 
     public function handle(Request $request, Closure $next): Response
@@ -73,7 +80,9 @@ class RbacAudit
         }
 
         if ($this->permissions->checkPermission($userId, $orgId, $group, $level, $projectId)) {
-            return $next($request); // allowed — nothing to record
+            $this->recordDelegatedAction($request, $userId, $orgId, $pattern, $group, $level, $projectId, $quoteId, $batch);
+
+            return $next($request);
         }
 
         $reason = ($projectId !== null) ? 'no_grant_or_not_project_member' : 'no_grant';
@@ -167,6 +176,10 @@ class RbacAudit
         ]);
 
         if ($enforcing) {
+            if ($this->projectOutsideOrg($reason, $orgId, $projectId)) {
+                throw new NotFoundHttpException('Not found.');
+            }
+
             $message = $this->friendlyMessage($group, $level, $reason, $request->user()->id, $orgId, $projectId);
 
             // AJAX / JSON requests → JSON payload so the client can show a popup.
@@ -190,6 +203,62 @@ class RbacAudit
         $request->attributes->set('rbac_audit_row', $row->id);
 
         return $next($request); // audit mode — let it through exactly as before
+    }
+
+    /**
+     * An allowed request made by a delegate is evaluated as the principal; record whom they acted for. Fail-soft: an
+     * audit failure must never block the request.
+     */
+    private function recordDelegatedAction(
+        Request $request,
+        int $userId,
+        int $orgId,
+        string $pattern,
+        string $group,
+        string $level,
+        ?int $projectId,
+        ?int $quoteId,
+        ?string $batch,
+    ): void {
+        try {
+            $principalId = $this->delegations->resolveEffectiveUserId($userId, $orgId);
+
+            if ($principalId === $userId) {
+                return;
+            }
+
+            $principal = DB::table('users')->where('id', $principalId)->value('name') ?? 'unknown';
+
+            AuditLog::create([
+                'user_id' => $userId,
+                'org_id' => $orgId,
+                'method' => $request->method(),
+                'route_uri' => $request->route()?->uri() ?? $request->path(),
+                'matched_pattern' => $pattern,
+                'permission_group' => $group,
+                'required_level' => $level,
+                'project_id' => $projectId,
+                'quote_id' => $quoteId,
+                'batch' => $batch,
+                'outcome' => 'delegated_action',
+                'reason' => Str::limit("acting for {$principal} (#{$principalId})", 255, ''),
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('delegated_action audit row write failed', ['user_id' => $userId, 'org_id' => $orgId, 'error' => get_class($e)]);
+        }
+    }
+
+    /**
+     * A scoped route whose project is not a live project of the acting org (another org's, missing, deleted, or a quote
+     * without a project) answers 404, so that "does not exist" and "exists in another org" cannot be told apart.
+     */
+    private function projectOutsideOrg(string $reason, ?int $orgId, ?int $projectId): bool
+    {
+        if ($orgId === null || ! in_array($reason, ['no_grant_or_not_project_member', 'project_unresolved'], true)) {
+            return false;
+        }
+
+        return $projectId === null || ! Project::where('id', $projectId)->where('org_id', $orgId)->exists();
     }
 
     /**

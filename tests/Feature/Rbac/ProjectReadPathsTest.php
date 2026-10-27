@@ -138,7 +138,7 @@ class ProjectReadPathsTest extends ProjectTestCase
     {
         $this->setMode('enforce');
 
-        $this->asJson($this->outsider, $method, $this->uri($tpl, $this->q1))->assertForbidden();
+        $this->asJson($this->outsider, $method, $this->uri($tpl, $this->q1))->assertNotFound();
 
         $row = AuditLog::firstOrFail();
         $this->assertSame($this->orgB->id, (int) $row->org_id);
@@ -172,7 +172,7 @@ class ProjectReadPathsTest extends ProjectTestCase
         $this->setMode('enforce');
         DB::table('projects')->where('id', $this->p1)->update(['deleted_at' => now()]);
 
-        $this->asJson($this->est, $method, $this->uri($tpl, $this->q1))->assertForbidden();
+        $this->asJson($this->est, $method, $this->uri($tpl, $this->q1))->assertNotFound();
     }
 
     #[DataProvider('routes')]
@@ -189,7 +189,7 @@ class ProjectReadPathsTest extends ProjectTestCase
     {
         $this->setMode('enforce');
 
-        $this->asJson($this->owner, $method, $this->uri($tpl, $this->q0))->assertForbidden();
+        $this->asJson($this->owner, $method, $this->uri($tpl, $this->q0))->assertNotFound();
 
         $row = AuditLog::firstOrFail();
         $this->assertSame('project_unresolved', $row->reason);
@@ -521,7 +521,7 @@ class ProjectReadPathsTest extends ProjectTestCase
         foreach (['audit', 'enforce'] as $mode) {
             $this->setMode($mode);
             $r = $this->actingAs($this->owner)->get("projects/{$this->q0}/workspace");
-            $mode === 'audit' ? $r->assertNotFound() : $r->assertStatus(302); // enforce: the middleware denies first (project_unresolved)
+            $r->assertNotFound(); // enforce: the middleware answers 404 first (project_unresolved)
         }
     }
 
@@ -620,8 +620,8 @@ class ProjectReadPathsTest extends ProjectTestCase
             $this->setMode($mode);
             foreach ($denied as $label => $user) {
                 $r = $this->asJson($user, $method, $this->uri($tpl, $this->q1), [], $this->writePayload($tpl));
-                // enforce: the middleware answers 403; audit: the controller scope answers 404
-                $expected = $mode === 'enforce' ? 403 : 404;
+                // enforce: the middleware answers 403 (404 for another org's quote); audit: the controller scope answers 404
+                $expected = $mode === 'enforce' && $label !== 'wrong org' ? 403 : 404;
                 $this->assertSame($expected, $r->getStatusCode(), "$mode / $label");
                 $this->assertEquals($before, $this->snapshot(), "$mode / $label wrote something");
             }

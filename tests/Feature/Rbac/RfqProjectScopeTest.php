@@ -690,11 +690,11 @@ class RfqProjectScopeTest extends ProjectTestCase
         $before = $this->snapshot();
 
         foreach ([$rfq, $legacy] as $id) {
-            $this->req($this->outsider, 'GET', route('rfq.show', $id))->assertForbidden();
-            $this->req($this->outsider, 'POST', route('rfq.convert', $id))->assertForbidden();
-            $this->req($this->multi, 'GET', route('rfq.show', $id), [], $this->orgSession($this->orgB->id))->assertForbidden();
+            $this->req($this->outsider, 'GET', route('rfq.show', $id))->assertNotFound();
+            $this->req($this->outsider, 'POST', route('rfq.convert', $id))->assertStatus($mode === 'enforce' ? 403 : 404);
+            $this->req($this->multi, 'GET', route('rfq.show', $id), [], $this->orgSession($this->orgB->id))->assertNotFound();
         }
-        $this->req($this->outsider, 'POST', route('rfq.response.select', [$rfq, $resp]))->assertForbidden();
+        $this->req($this->outsider, 'POST', route('rfq.response.select', [$rfq, $resp]))->assertStatus($mode === 'enforce' ? 403 : 404);
 
         $this->assertSame($before, $this->snapshot());
     }

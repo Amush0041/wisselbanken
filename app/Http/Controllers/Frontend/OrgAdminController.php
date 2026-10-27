@@ -16,6 +16,7 @@ use App\Models\Rbac\AuditLog as RbacAuditLog;
 use App\Models\Rbac\RoleAssignmentLog;
 use App\Models\Rbac\Organization;
 use App\Support\Rbac\CurrentOrg;
+use App\Support\Rbac\DenialRecorder;
 use App\Models\Rbac\PermissionGroup;
 use App\Models\Rbac\Role;
 use App\Models\Rbac\RolePermission;
@@ -159,7 +160,11 @@ class OrgAdminController extends Controller
     public function removeRole(UserOrgRole $userOrgRole): RedirectResponse
     {
         $org = $this->currentOrg();
-        abort_if(! $org || $userOrgRole->org_id !== $org->id, 403, 'Not in your organization.');
+        abort_if(! $org, 403, 'Not in your organization.');
+        if ($userOrgRole->org_id !== $org->id) {
+            DenialRecorder::record(request());
+            abort(404);
+        }
         $this->requireOrgLevel($org, 'user_management', 'F');
 
         $this->assignments->deactivate($userOrgRole->id, Auth::id());
@@ -490,9 +495,6 @@ class OrgAdminController extends Controller
             ->orderBy('created_at', 'desc')
             ->get();
 
-        // All other orgs to populate the partner picker (exclude self).
-        $allOrgs = Organization::where('id', '!=', $org->id)->orderBy('name')->get(['id', 'name', 'org_type']);
-
         $relationshipTypes = [
             'buyer_seller'             => 'Buyer → Seller (Trading Partnership)',
             'gc_subcontractor'         => 'General Contractor → Subcontractor',
@@ -507,7 +509,7 @@ class OrgAdminController extends Controller
         $canManageConnections = $this->permissions->checkPermission((int) Auth::id(), (int) $org->id, 'organization_management', 'F');
 
         return view('user.org-admin.connections', compact(
-            'org', 'outgoing', 'incoming', 'allOrgs', 'relationshipTypes', 'priorities', 'canManageConnections'
+            'org', 'outgoing', 'incoming', 'relationshipTypes', 'priorities', 'canManageConnections'
         ));
     }
 
@@ -518,13 +520,21 @@ class OrgAdminController extends Controller
         $this->requireOrgLevel($org, 'organization_management', 'F', 'You need full organization management access to change connections.');
 
         $data = $request->validate([
-            'to_org_id'         => ['required', 'integer', 'exists:organizations,id', Rule::notIn([$org->id])],
+            'partner_name'      => ['required', 'string', 'max:255'],
             'relationship_type' => ['required', 'string', 'in:buyer_seller,gc_subcontractor,distributor_manufacturer,manufacturer_rep_agency,gpo_member,delegation'],
             'priority'          => ['nullable', 'string', 'in:Critical,High,Medium'],
         ]);
 
+        $matches = Organization::where('name', $data['partner_name'])->get();
+
+        if ($matches->count() !== 1 || (int) $matches->first()->id === (int) $org->id) {
+            return back()->withInput()->with('error', 'No organization matches that name. Check the exact spelling with your partner.');
+        }
+
+        $partnerId = (int) $matches->first()->id;
+
         $exists = OrgRelationship::where('from_org_id', $org->id)
-            ->where('to_org_id', $data['to_org_id'])
+            ->where('to_org_id', $partnerId)
             ->where('relationship_type', $data['relationship_type'])
             ->where('is_active', true)
             ->exists();
@@ -535,7 +545,7 @@ class OrgAdminController extends Controller
 
         OrgRelationship::create([
             'from_org_id'       => $org->id,
-            'to_org_id'         => (int) $data['to_org_id'],
+            'to_org_id'         => $partnerId,
             'relationship_type' => $data['relationship_type'],
             'priority'          => $data['priority'] ?? null,
             'is_active'         => true,
@@ -547,7 +557,11 @@ class OrgAdminController extends Controller
     public function destroyConnection(OrgRelationship $orgRelationship): RedirectResponse
     {
         $org = $this->currentOrg();
-        abort_if(! $org || $orgRelationship->from_org_id !== $org->id, 403, 'Not your connection.');
+        abort_if(! $org, 403, 'Not your connection.');
+        if ($orgRelationship->from_org_id !== $org->id) {
+            DenialRecorder::record(request());
+            abort(404);
+        }
         $this->requireOrgLevel($org, 'organization_management', 'F', 'You need full organization management access to change connections.');
 
         $orgRelationship->update(['is_active' => false]);
@@ -627,7 +641,11 @@ class OrgAdminController extends Controller
     public function removeProjectMember(ProjectMember $projectMember): RedirectResponse
     {
         $org = $this->currentOrg();
-        abort_if(! $org || $projectMember->org_id !== $org->id, 403, 'Not in your organization.');
+        abort_if(! $org, 403, 'Not in your organization.');
+        if ($projectMember->org_id !== $org->id) {
+            DenialRecorder::record(request());
+            abort(404);
+        }
         $this->requireOrgLevel($org, 'project_management', 'F', 'You need full project management access to change project members.');
         $project = Project::where('org_id', $org->id)->findOrFail($projectMember->project_id);
         $this->requireProjectFull($project, $org);

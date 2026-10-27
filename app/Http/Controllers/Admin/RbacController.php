@@ -22,6 +22,7 @@ use App\Models\Rbac\RbacSetting;
 use App\Models\Rbac\SodConflictRule;
 use App\Models\Rbac\RolePermission;
 use App\Models\User;
+use App\Services\Rbac\DelegationService;
 use App\Services\Rbac\PermissionMatrix;
 use App\Services\Rbac\RoleAssignmentService;
 use Illuminate\Http\JsonResponse;
@@ -398,7 +399,11 @@ class RbacController extends Controller
     /** Revoke a delegation (platform-admin). */
     public function revokeAdminDelegation(Delegation $delegation): RedirectResponse
     {
+        $wasActive = (bool) $delegation->is_active;
         $delegation->update(['is_active' => false]);
+        if ($wasActive) {
+            app(DelegationService::class)->audit('delegation_revoked', $delegation, (int) auth()->id(), 'F');
+        }
 
         return back()->with('success', 'Delegation revoked.');
     }

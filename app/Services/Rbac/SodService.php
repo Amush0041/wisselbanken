@@ -22,6 +22,10 @@ class SodService
      */
     public function conflictsFor(int $userId, int $orgId, int $roleIdToAssign): array
     {
+        if ($this->isSoleActiveMember($userId, $orgId)) {
+            return [];
+        }
+
         $conflictingIds = SodConflictRule::conflictingRoleIds($roleIdToAssign);
 
         if ($conflictingIds->isEmpty()) {
@@ -39,5 +43,15 @@ class SodService
         }
 
         return Role::whereIn('id', $held)->pluck('name')->all();
+    }
+
+    private function isSoleActiveMember(int $userId, int $orgId): bool
+    {
+        $memberIds = UserOrgRole::where('org_id', $orgId)
+            ->where('is_active', true)
+            ->distinct()
+            ->pluck('user_id');
+
+        return $memberIds->count() === 1 && (int) $memberIds->first() === $userId;
     }
 }

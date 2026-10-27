@@ -241,6 +241,12 @@
                                     <span class="badge bg-label-success me-1">Auto-approved</span>
                                 @elseif ($log->outcome === 'self_approved')
                                     <span class="badge bg-label-success me-1">Self-approved (sole approver)</span>
+                                @elseif ($log->outcome === 'delegation_granted')
+                                    <span class="badge bg-label-success me-1">Delegation granted</span>
+                                @elseif ($log->outcome === 'delegation_revoked')
+                                    <span class="badge bg-label-secondary me-1">Delegation revoked</span>
+                                @elseif ($log->outcome === 'delegated_action')
+                                    <span class="badge bg-label-info me-1">Delegated action</span>
                                 @else
                                     <span class="badge bg-label-secondary me-1">Logged</span>
                                 @endif
