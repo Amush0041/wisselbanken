@@ -90,6 +90,8 @@ Route::get('register/invite/{token}', [\App\Http\Controllers\Auth\InviteControll
     ->name('invite.show')->middleware('guest');
 Route::post('register/invite/{token}', [\App\Http\Controllers\Auth\InviteController::class, 'register'])
     ->name('invite.register')->middleware('guest');
+Route::get('invite/{token}', [\App\Http\Controllers\Auth\InviteController::class, 'entry'])
+    ->name('invite.entry');
 
 
 

@@ -10,6 +10,7 @@ use App\Models\RfqRecipient;
 use App\Models\RfqRequest;
 use App\Models\RfqResponse;
 use App\Models\Rbac\Organization;
+use App\Models\Rbac\ProjectMember;
 use App\Services\Rbac\ApprovalRoutingService;
 use App\Services\Rbac\OrgRelationshipService;
 use App\Services\Rbac\PermissionService;
@@ -106,7 +107,9 @@ class RfqController extends Controller
             'You do not have permission to send RFQs for this project.'
         );
 
-        DB::transaction(function () use ($request, $orgId, $projectId) {
+        DB::transaction(function () use ($request, $orgId, $projectId, $userId) {
+            ProjectMember::enrolCreator(Project::findOrFail($projectId), $userId);
+
             $rfq = RfqRequest::create([
                 'org_id'     => $orgId,
                 'project_id' => $projectId,

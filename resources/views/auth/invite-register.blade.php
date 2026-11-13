@@ -130,7 +130,7 @@
             </form>
 
             <p class="text-center text-muted mt-3 mb-0" style="font-size:.82rem">
-                Already have an account? <a href="{{ route('login') }}">Sign in</a> — your role will be assigned automatically.
+                Already have an account? <a href="{{ route('invite.review', $token) }}">Sign in to accept this invitation</a>
             </p>
         </div>
     </div>

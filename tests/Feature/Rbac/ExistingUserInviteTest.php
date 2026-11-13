@@ -98,7 +98,7 @@ class ExistingUserInviteTest extends ProjectTestCase
         $this->assertSame($this->orgA->id, (int) $row->org_id);
         $this->assertSame($this->roleId('estimator'), (int) $row->role_id);
         $this->assertNull($row->used_at);
-        $this->assertSame(url("/invite/{$row->token}/accept"), $r->json('link'));
+        $this->assertSame(url("/invite/{$row->token}"), $r->json('link'));
     }
 
     #[DataProvider('modes')]
@@ -128,7 +128,7 @@ class ExistingUserInviteTest extends ProjectTestCase
         $this->assertSame(1, DB::table('org_invites')->count());
     }
 
-    public function test_the_existing_account_mail_points_to_the_accept_page_and_new_mail_is_unchanged(): void
+    public function test_the_mail_links_to_the_invite_entry_for_an_existing_and_a_new_address(): void
     {
         $this->invite(['email' => $this->invitee->email, 'name' => 'Invitee', 'role_id' => $this->roleId('estimator')])->assertOk();
         $this->invite(['email' => 'brand-new@example.test', 'name' => 'Newbie', 'role_id' => $this->roleId('estimator')])->assertOk();
@@ -137,25 +137,26 @@ class ExistingUserInviteTest extends ProjectTestCase
         $freshToken = DB::table('org_invites')->where('email', 'brand-new@example.test')->value('token');
 
         Mail::assertSent(OrgInviteMail::class, fn ($m) => $m->hasTo($this->invitee->email)
-            && $m->existingAccount === true && $m->inviteUrl === url("/invite/$existingToken/accept"));
+            && $m->inviteUrl === url("/invite/$existingToken"));
         Mail::assertSent(OrgInviteMail::class, fn ($m) => $m->hasTo('brand-new@example.test')
-            && $m->existingAccount === false && $m->inviteUrl === url("/register/invite/$freshToken"));
+            && $m->inviteUrl === url("/invite/$freshToken"));
         Mail::assertSent(OrgInviteMail::class, 2);
     }
 
-    public function test_the_mail_text_differs_for_an_existing_account(): void
+    public function test_the_mail_text_is_the_same_for_an_existing_and_a_new_address(): void
     {
         $this->invite(['email' => $this->invitee->email, 'name' => 'Invitee', 'role_id' => $this->roleId('estimator')])->assertOk();
-        $this->invite(['email' => 'brand-new@example.test', 'name' => 'Newbie', 'role_id' => $this->roleId('estimator')])->assertOk();
+        $this->invite(['email' => 'brand-new@example.test', 'name' => 'Invitee', 'role_id' => $this->roleId('estimator')])->assertOk();
 
-        Mail::assertSent(OrgInviteMail::class, function ($m) {
-            $html = $m->render();
-            if ($m->existingAccount) {
-                return str_contains($html, 'Sign in to accept') && str_contains($html, 'already have a Wisselbanken account');
-            }
+        $html = [];
+        foreach ([$this->invitee->email, 'brand-new@example.test'] as $email) {
+            $token = DB::table('org_invites')->where('email', $email)->value('token');
+            $mail = Mail::sent(OrgInviteMail::class, fn ($m) => $m->hasTo($email))->first();
+            $html[] = str_replace($token, 'TOKEN', $mail->render());
+        }
 
-            return str_contains($html, 'Accept invitation') && ! str_contains($html, 'already have a Wisselbanken account');
-        });
+        $this->assertSame($html[0], $html[1]);
+        $this->assertStringContainsString('Accept invitation', $html[0]);
     }
 
     public function test_send_email_false_returns_the_link_without_mailing_and_a_prior_invite_is_replaced(): void
@@ -372,7 +373,7 @@ class ExistingUserInviteTest extends ProjectTestCase
     }
 
     #[DataProvider('modes')]
-    public function test_the_returned_link_is_the_register_link_for_a_new_address_and_the_accept_link_for_an_existing_account(string $mode): void
+    public function test_the_returned_link_has_the_same_invite_entry_form_for_a_new_and_an_existing_address(string $mode): void
     {
         $this->setMode($mode);
 
@@ -381,8 +382,8 @@ class ExistingUserInviteTest extends ProjectTestCase
 
         $freshToken = DB::table('org_invites')->where('email', 'brand-new@example.test')->value('token');
         $existingToken = DB::table('org_invites')->where('email', $this->invitee->email)->value('token');
-        $this->assertSame(url("/register/invite/$freshToken"), $fresh->json('link'));
-        $this->assertSame(url("/invite/$existingToken/accept"), $existing->json('link'));
+        $this->assertSame(url("/invite/$freshToken"), $fresh->json('link'));
+        $this->assertSame(url("/invite/$existingToken"), $existing->json('link'));
     }
 
     #[DataProvider('modes')]

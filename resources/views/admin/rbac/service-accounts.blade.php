@@ -168,7 +168,7 @@
                                         <form action="{{ route('admin.rbac.service-accounts.revoke', $token->id) }}" method="POST" class="d-inline">
                                             @csrf @method('DELETE')
                                             <button class="btn btn-sm btn-text-danger" style="font-size:.8rem;font-weight:600;color:#dc3545"
-                                                    onclick="return confirm('Revoke token {{ $token->name }}?')">
+                                                    onclick="return confirm(@js('Revoke token ' . $token->name . '?'))">
                                                 Revoke
                                             </button>
                                         </form>

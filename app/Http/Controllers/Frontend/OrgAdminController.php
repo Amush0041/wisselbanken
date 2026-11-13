@@ -122,12 +122,17 @@ class OrgAdminController extends Controller
             ], 422);
         }
 
+        $ownRow = $result['peel_off_candidate']
+            ? $this->ownActiveRole((int) $org->id, (int) $data['role_id'])
+            : null;
+
         return response()->json([
             'success' => true,
             'message' => "Assigned {$role->name}.",
             // When true, the assigner holds this role too — the UI should ask whether to
             // remove it from the assigner's own account (the peel-off prompt).
             'peel_off_candidate' => $result['peel_off_candidate'],
+            'peel_off_last_role' => $ownRow !== null && $this->assignments->isLastActiveRole($ownRow),
             'role_id' => (int) $data['role_id'],
             'role_name' => $role->name,
         ]);
@@ -146,6 +151,15 @@ class OrgAdminController extends Controller
             'role_id' => ['required', 'integer', Rule::exists('roles', 'id')],
         ]);
 
+        $own = $this->ownActiveRole((int) $org->id, (int) $data['role_id']);
+        if ($own && ! $request->boolean('confirm_last_role') && $this->assignments->isLastActiveRole($own)) {
+            return response()->json([
+                'success' => false,
+                'last_role' => true,
+                'message' => $this->lastRoleMessage($org),
+            ], 422);
+        }
+
         $removed = $this->assignments->peelOff(Auth::id(), $org->id, (int) $data['role_id']);
 
         return response()->json([
@@ -157,7 +171,7 @@ class OrgAdminController extends Controller
     /**
      * Remove a role from a member (soft-removal of a single assignment).
      */
-    public function removeRole(UserOrgRole $userOrgRole): RedirectResponse
+    public function removeRole(Request $request, UserOrgRole $userOrgRole): RedirectResponse|JsonResponse
     {
         $org = $this->currentOrg();
         abort_if(! $org, 403, 'Not in your organization.');
@@ -166,6 +180,17 @@ class OrgAdminController extends Controller
             abort(404);
         }
         $this->requireOrgLevel($org, 'user_management', 'F');
+
+        if (! $request->boolean('confirm_last_role') && $this->assignments->isLastActiveRole($userOrgRole)) {
+            $message = $this->lastRoleMessage(
+                $org,
+                (int) $userOrgRole->user_id === (int) Auth::id() ? null : $userOrgRole->user->name
+            );
+
+            return $request->expectsJson()
+                ? response()->json(['last_role' => true, 'message' => $message], 422)
+                : back()->with('error', $message);
+        }
 
         $this->assignments->deactivate($userOrgRole->id, Auth::id());
 
@@ -433,9 +458,6 @@ class OrgAdminController extends Controller
 
         $this->requireAssignableRole(Role::findOrFail($data['role_id']), $org);
 
-        // An existing account is never given the role directly: it is invited like anyone else and accepts while signed in.
-        $existingAccount = User::where('email', $data['email'])->exists();
-
         // Revoke any prior unused invite for the same email + org
         OrgInvite::where('email', $data['email'])->where('org_id', $org->id)->whereNull('used_at')->delete();
 
@@ -454,7 +476,7 @@ class OrgAdminController extends Controller
         $emailSent = false;
         if ($request->boolean('send_email', true)) {
             try {
-                Mail::to($invite->email, $invite->name)->send(new OrgInviteMail($invite, $existingAccount));
+                Mail::to($invite->email, $invite->name)->send(new OrgInviteMail($invite));
                 $emailSent = true;
             } catch (\Exception) {
                 // Mail failure is non-fatal — caller still gets the link to share manually.
@@ -464,9 +486,7 @@ class OrgAdminController extends Controller
         return response()->json([
             'type'       => 'invite',
             'email_sent' => $emailSent,
-            'link'       => $existingAccount
-                ? url('/invite/' . $invite->token . '/accept')
-                : url('/register/invite/' . $invite->token),
+            'link'       => url('/invite/' . $invite->token),
         ]);
     }
 
@@ -699,6 +719,22 @@ class OrgAdminController extends Controller
             403,
             'You need full project management access to change project members.'
         );
+    }
+
+    private function ownActiveRole(int $orgId, int $roleId): ?UserOrgRole
+    {
+        return UserOrgRole::where('user_id', Auth::id())
+            ->where('org_id', $orgId)
+            ->where('role_id', $roleId)
+            ->where('is_active', true)
+            ->first();
+    }
+
+    private function lastRoleMessage(Organization $org, ?string $memberName = null): string
+    {
+        return $memberName === null
+            ? "You have no other role in {$org->name}. Removing this role removes you from the organization. Confirm to continue."
+            : "{$memberName} has no other role in {$org->name}. Removing this role removes {$memberName} from the organization. Confirm to continue.";
     }
 
     private function currentOrg(): ?Organization

@@ -16,7 +16,16 @@ class InviteController extends Controller
 {
     public function __construct()
     {
-        $this->middleware('guest');
+        $this->middleware('guest')->except('entry');
+    }
+
+    public function entry(string $token)
+    {
+        if (Auth::check()) {
+            return redirect()->route('invite.review', $token);
+        }
+
+        return $this->show($token);
     }
 
     public function show(string $token)
@@ -47,6 +56,12 @@ class InviteController extends Controller
             'name'                  => ['required', 'string', 'max:255'],
             'password'              => ['required', 'string', 'min:8', 'confirmed'],
         ]);
+
+        if (User::where('email', $invite->email)->exists()) {
+            return redirect()->setIntendedUrl(route('invite.review', $token))
+                ->route('login')
+                ->with('status', 'Sign in to accept this invitation.');
+        }
 
         // Create user — no new org, no org type fields needed
         $user = User::create([

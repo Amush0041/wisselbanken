@@ -38,11 +38,28 @@ class SodService
             ->whereIn('role_id', $conflictingIds)
             ->pluck('role_id');
 
+        if ($held->isNotEmpty() && $this->holdsOwnerRole($userId, $orgId)) {
+            $bundleIds = Role::whereIn('slug', (array) config('rbac.onboarding.bundles.buyer_small'))->pluck('id');
+
+            if ($bundleIds->contains($roleIdToAssign)) {
+                $held = $held->reject(fn ($id) => $bundleIds->contains($id))->values();
+            }
+        }
+
         if ($held->isEmpty()) {
             return [];
         }
 
         return Role::whereIn('id', $held)->pluck('name')->all();
+    }
+
+    private function holdsOwnerRole(int $userId, int $orgId): bool
+    {
+        return UserOrgRole::where('user_id', $userId)
+            ->where('org_id', $orgId)
+            ->where('is_active', true)
+            ->whereHas('role', fn ($q) => $q->where('slug', 'organization_owner'))
+            ->exists();
     }
 
     private function isSoleActiveMember(int $userId, int $orgId): bool

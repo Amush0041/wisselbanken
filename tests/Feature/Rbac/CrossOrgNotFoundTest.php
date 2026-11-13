@@ -233,7 +233,7 @@ class CrossOrgNotFoundTest extends ProjectTestCase
         $this->assertSame(1, (int) DB::table('user_org_roles')->where('id', $foreign)->value('is_active'));
         $this->assertSame(1, $this->controllerDenials(), 'a missing id writes nothing');
 
-        $this->asUser($this->ownerA, 'DELETE', "org-admin/roles/$own")->assertRedirect();
+        $this->asUser($this->ownerA, 'DELETE', "org-admin/roles/$own", null, ['confirm_last_role' => 1])->assertRedirect();
         $this->assertSame(0, (int) DB::table('user_org_roles')->where('id', $own)->value('is_active'));
         $this->assertSame(1, $this->controllerDenials(), 'the own-org success writes nothing');
         $this->assertSame(1, AuditLog::count());

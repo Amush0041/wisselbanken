@@ -117,6 +117,16 @@ class RoleAssignmentService
             ->exists();
     }
 
+    public function isLastActiveRole(UserOrgRole $row): bool
+    {
+        return $row->is_active
+            && ! UserOrgRole::where('user_id', $row->user_id)
+                ->where('org_id', $row->org_id)
+                ->where('is_active', true)
+                ->where('id', '!=', $row->id)
+                ->exists();
+    }
+
     public function isActiveMember(int $userId, int $orgId): bool
     {
         return UserOrgRole::where('user_id', $userId)

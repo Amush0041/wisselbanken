@@ -80,6 +80,17 @@ class ProjectMember extends Model
         });
     }
 
+    // A universal admin working in another organization has no active role there and gets no membership.
+    public static function enrolCreator(Project $project, int $userId): ?self
+    {
+        $isOrgMember = UserOrgRole::where('user_id', $userId)
+            ->where('org_id', $project->org_id)
+            ->where('is_active', true)
+            ->exists();
+
+        return $isOrgMember ? static::enrol($project, $userId, (int) $project->org_id, $userId) : null;
+    }
+
     public function deactivate(?int $performedBy): void
     {
         DB::transaction(function () use ($performedBy) {

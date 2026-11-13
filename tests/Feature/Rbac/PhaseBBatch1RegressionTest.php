@@ -222,7 +222,7 @@ class PhaseBBatch1RegressionTest extends ProjectTestCase
         $pm = (int) DB::table('project_members')->where('project_id', $this->p1)->where('user_id', $this->super->id)->value('id');
         $lead = $this->mkUser($this->orgA, 'project_manager');
 
-        $this->inOrg($this->ownerA)->from('org-admin')->delete("org-admin/roles/$row")->assertRedirect('org-admin')->assertSessionHas('success');
+        $this->inOrg($this->ownerA)->from('org-admin')->delete("org-admin/roles/$row", ['confirm_last_role' => 1])->assertRedirect('org-admin')->assertSessionHas('success');
         $this->inOrg($this->ownerA)->from('org-admin/connections')->delete("org-admin/connections/$conn")->assertRedirect('org-admin/connections')->assertSessionHas('success', 'Connection deactivated.');
         $this->member($this->p1, $lead, $this->orgA);
         $this->inOrg($lead)->from('org-admin/projects')->delete("org-admin/projects/members/$pm")->assertRedirect('org-admin/projects')->assertSessionHas('success');

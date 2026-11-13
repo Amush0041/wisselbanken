@@ -237,6 +237,11 @@ $usersJson = $users->keyBy('id')->map(function ($u) {
 <script>
 const usersData = @json($usersJson);
 
+function escapeHtml(str) {
+    if (str == null) return '';
+    return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
 let _activeDrawerUserId = null;
 
 function openUserDrawer(userId) {
@@ -258,10 +263,10 @@ function openUserDrawer(userId) {
             html += `<div class="card border-0 shadow-sm mb-3">
                 <div class="card-body py-2 px-3">
                     <div class="d-flex justify-content-between align-items-center mb-2">
-                        <span class="fw-semibold small">${og.org_name}</span>
-                        ${og.org_type ? `<span class="badge bg-label-secondary" style="font-size:.65rem">${og.org_type}</span>` : ''}
+                        <span class="fw-semibold small">${escapeHtml(og.org_name)}</span>
+                        ${og.org_type ? `<span class="badge bg-label-secondary" style="font-size:.65rem">${escapeHtml(og.org_type)}</span>` : ''}
                     </div>
-                    <div class="d-flex flex-wrap">${og.roles.map(r => `<span class="role-tag">${r.name}</span>`).join('')}</div>
+                    <div class="d-flex flex-wrap">${og.roles.map(r => `<span class="role-tag">${escapeHtml(r.name)}</span>`).join('')}</div>
                 </div>
             </div>`;
         });
@@ -275,8 +280,8 @@ function openUserDrawer(userId) {
         u.delegations.forEach(d => {
             html += `<div class="card border-0 shadow-sm mb-2">
                 <div class="card-body py-2 px-3">
-                    <small class="fw-medium">Acting for ${d.from}</small><br>
-                    <small class="text-muted">Expires ${d.expires}</small>
+                    <small class="fw-medium">Acting for ${escapeHtml(d.from)}</small><br>
+                    <small class="text-muted">Expires ${escapeHtml(d.expires)}</small>
                 </div>
             </div>`;
         });
@@ -292,8 +297,8 @@ function openUserDrawer(userId) {
             html += `<div class="token-row">
                 <span class="token-dot" style="background:${t.active ? '#198754' : '#adb5bd'}"></span>
                 <div class="flex-grow-1">
-                    <div class="fw-medium small">${t.name}</div>
-                    <small class="text-muted">Last used: ${t.last_used}</small>
+                    <div class="fw-medium small">${escapeHtml(t.name)}</div>
+                    <small class="text-muted">Last used: ${escapeHtml(t.last_used)}</small>
                 </div>
             </div>`;
         });

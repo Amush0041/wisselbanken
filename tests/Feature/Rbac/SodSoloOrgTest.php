@@ -183,7 +183,7 @@ class SodSoloOrgTest extends ProjectTestCase
     {
         $this->setMode($mode);
         [$org, $owner] = $this->soloOrg();
-        $this->assignVia($owner, $org, $owner->id, 'estimator')->assertOk();
+        $this->assignVia($owner, $org, $owner->id, 'requisitioner')->assertOk();
         $other = $this->mkUser($org, 'viewer_read_only');
         $this->assignRole($other, $org, 'foreman', false);
 
@@ -209,7 +209,7 @@ class SodSoloOrgTest extends ProjectTestCase
     public function test_the_service_reports_no_conflict_for_a_sole_member_and_names_them_for_a_second_member(): void
     {
         [$org, $owner] = $this->soloOrg();
-        $this->assignRole($owner, $org, 'estimator');
+        $this->assignRole($owner, $org, 'requisitioner');
         $ea = $this->roleId('executive_approver');
         $service = app(SodService::class);
 
@@ -217,7 +217,7 @@ class SodSoloOrgTest extends ProjectTestCase
 
         $this->mkUser($org, 'viewer_read_only');
 
-        $this->assertSame(['Estimator'], $service->conflictsFor($owner->id, $org->id, $ea));
+        $this->assertSame(['Requisitioner'], $service->conflictsFor($owner->id, $org->id, $ea));
     }
 
     public function test_an_org_with_no_active_member_has_no_exemption_and_no_conflict(): void

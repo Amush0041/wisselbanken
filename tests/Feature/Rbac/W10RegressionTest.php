@@ -331,7 +331,7 @@ class W10RegressionTest extends ProjectTestCase
         $this->assertSame($this->p2, (int) DB::table('quotes')->where('id', $id)->value('project_id'));
         $this->assertSame($this->ownerNm->id, (int) DB::table('quotes')->where('id', $id)->value('user_id'));
         $this->assertContains($id, $this->ints(array_column($this->req($this->ownerNm, 'GET', 'quotes/list')->assertOk()->json('quotes'), 'id')));
-        $this->assertSame(0, DB::table('project_members')->where('project_id', $this->p2)->where('user_id', $this->ownerNm->id)->count(), 'creating does not enrol the owner');
+        $this->assertSame(1, DB::table('project_members')->where('project_id', $this->p2)->where('user_id', $this->ownerNm->id)->where('is_active', 1)->count(), 'creating enrols the owner (M12)');
 
         $n = $count();
         $this->req($this->ownerNm, 'POST', "projects/{$this->p3}/quotes", ['customer_id' => 1])->assertNotFound();

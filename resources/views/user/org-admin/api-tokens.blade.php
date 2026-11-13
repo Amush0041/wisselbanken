@@ -111,7 +111,7 @@
                                         <form action="{{ route('org-admin.api-tokens.destroy', $token->id) }}" method="POST" class="d-inline">
                                             @csrf @method('DELETE')
                                             <button class="btn btn-sm btn-icon btn-text-danger" title="Revoke token"
-                                                    onclick="return confirm('Revoke token {{ $token->name }}? This cannot be undone.')">
+                                                    onclick="return confirm(@js('Revoke token ' . $token->name . '? This cannot be undone.'))">
                                                 <i class="ti ti-trash"></i>
                                             </button>
                                         </form>

@@ -55,7 +55,8 @@ Source of the original spec: `Revised_RBAC_Module_Implementation_Plan.pdf`
   Owner, Organization Admin, Auditor/Read-All, Manufacturer Admin, Platform
   Super Admin; no delegation is resolved), and a listed universal admin sees the
   whole org as before (section 10b). This is visibility only: every write still
-  needs its group level, and the Owner is not auto-enrolled. W10 (client audit 2,
+  needs its group level, and the Owner is not auto-enrolled on every project (only
+  on a project where he creates an estimate or an RFQ, section 4.8). W10 (client audit 2,
   section 4.7) reverses the former rule "there is no owner bypass: an org owner
   sees only the projects they are a member of" and departs from the original
   plan's project-membership scoping; it ships only with the client's written
@@ -64,7 +65,10 @@ Source of the original spec: `Revised_RBAC_Module_Implementation_Plan.pdf`
   Every other role stays membership-scoped.
 - Creating a project needs `project_management` S; the creator is enrolled
   automatically (`ProjectController::store` calls `ProjectMember::enrol`).
-  Update needs O, delete needs F, member changes need F.
+  Update needs O, delete needs F, member changes need F. The creator of an
+  estimate (`QuoteController::store`, `createFromList`, `duplicate`) or an RFQ
+  (`RfqController::store`) is enrolled on that project too, through
+  `ProjectMember::enrolCreator` (client audit 2 round 2, M12; section 4.8).
 - Deletion refusals: a project that still has quotes or RFQs cannot be
   deleted (`ProjectController::destroy`, under a row lock). An organization
   that owns any project (soft-deleted included) cannot be deleted (admin and
@@ -303,8 +307,9 @@ invite acceptance, delegation and onboarding still call it directly.
 - **Invites.** `POST org-admin/invite` never assigns directly any more. Every
   e-mail, new or already registered, gets an `org_invites` row (7 days, one use)
   and the same JSON answer (`type: invite`, `email_sent`, `link`; no account
-  name). A new e-mail gets the register link; an existing account gets
-  `/invite/{token}/accept` and a mail variant that asks it to sign in.
+  name). Since client audit 2 round 2 (O11, section 4.8) the link is
+  `url('/invite/{token}')` (route `invite.entry`) and the mail is the same for
+  every address; the controller no longer looks up `users` at all.
   `Auth\InviteAcceptController` (`GET/POST invite/{token}/accept`, behind
   `auth`, `verified`, `checkRole:user`; not in the route map, listed as open in
   the guard test because the invitee has no membership yet): the signed-in
@@ -345,7 +350,10 @@ test class (TESTING.md).
   (Owner, Project Manager, Estimator, Executive Approver) holds roles the rules
   forbid together. As soon as a second member with an active row exists, SoD
   applies again to every NEW assignment; nothing is revoked retroactively. Applies
-  to all rules, whatever `sod_conflict_rules` holds. Test: `SodSoloOrgTest`.
+  to all rules, whatever `sod_conflict_rules` holds. Test: `SodSoloOrgTest`. Round 2
+  (section 4.8) adds an exemption for an Organization Owner of the org in
+  question for the pairs inside the registration bundle; the sole-member shortcut
+  is unchanged.
 - **JSON error bodies (S13).** `App\Exceptions\Handler` (bound in
   `bootstrap/app.php` with `withSingletons`, after `withExceptions`, so the 403
   `rbac_error` renderer still runs) overrides `convertExceptionToArray`: JSON
@@ -469,9 +477,11 @@ acknowledgement, status PENDING (section 2; as universal admin, section 10b, did
   answers 404; `GET rfq` answers 200 in both modes and shows project names.
   Accepted: it follows the audit / enforce rule of section 4.3; keying the rule on
   `organization_management` F AND `project_management` R is not planned (decision
-  for the human if the client objects). The Owner is NOT auto-enrolled: the membership screens, the
+  for the human if the client objects). The Owner is NOT auto-enrolled on projects he merely sees: the membership screens, the
   creator auto-enrol and the `project_member_logs` writes are as before (an Owner
-  can now add and remove members of any project of the org through them).
+  can now add and remove members of any project of the org through them). Client
+  audit 2 round 2 adds one case: the creator of an estimate or RFQ in a project
+  becomes a member of it, an Owner included (section 4.8).
 - **Estimates and RFQs.** Through `Project::visibleTo`, an org-wide viewer reads
   every estimate and RFQ of the org that their level allows (section 5). Quotes
   with `project_id` NULL stay visible to nobody, the Owner included.
@@ -516,6 +526,202 @@ acknowledgement, status PENDING (section 2; as universal admin, section 10b, did
   (TESTING.md), each moving a "member-scoped" expectation from an Owner to an actor
   that stays member-scoped, or (the two `AuditFindingsTest` lines) a same-org
   non-member from 403 to 404.
+
+### 4.8 Client audit 2, round 2 (M12, S15, O11, N01, L08, W12)
+
+No migration, no config key, no env key, no new permission group or role, no
+`config/route_permission_map.php` change. One new public route:
+`GET invite/{token}` (name `invite.entry`), outside the `auth` group like
+`register/invite/{token}`: no map entry and no `OPEN_ROUTES` entry, because
+`AuditFindingsRound2Test` only looks at `auth` routes. `docs/client-audit-pack/route-list.json`
+now lists 294 routes (293 before). Every new check below is a controller check and
+holds in audit mode as well as enforce mode.
+
+- **Invite answers are uniform (O11).** `OrgAdminController::generateInvite` makes
+  no `users` query and `OrgInviteMail` takes only the invite (`existingAccount` is
+  gone). The JSON is `{type: 'invite', email_sent, link}` with `link =
+  url('/invite/{token}')` for every address; validation errors keep Laravel's 422
+  `{message, errors}`, a missing permission (JSON request) the 403
+  `{rbac_error: true, message}` (the exception renderer in `bootstrap/app.php`; when
+  enforce mode blocks first, the `RbacAudit` body also carries `group` and `level`),
+  no org the existing 403 `{error}`. `Auth\InviteController::entry` (`invite.entry`):
+  signed in -> 302 to
+  `invite.review` without looking the token up (so `InviteAcceptController` keeps
+  deciding: wrong user or unknown token 404, wrong state the "invite invalid" page);
+  guest -> exactly what `register/invite/{token}` renders (the register page, or
+  `auth.invite-invalid` for an unknown, used or expired token). The constructor is
+  `middleware('guest')->except('entry')`. The old links
+  `/register/invite/{token}` and `/invite/{token}/accept` keep working for the 7
+  days of an invite already sent. `InviteController::register` checks, after
+  validation and before `User::create`, whether a user with the invite's address
+  exists (`User::where('email', ...)->exists()`, not a caught unique-index
+  exception); if so it creates nothing, leaves the invite unused and redirects to
+  `login` with `url.intended` = `route('invite.review', $token)` and the flash
+  `status` "Sign in to accept this invitation.". The mail wording is one text for
+  every recipient (view `emails/org-invite.blade.php`). Not changed:
+  `POST org-admin/invite` stays unthrottled (item 11). Known residual: the inviter
+  holds the token, so if he opens the link as a guest and submits the register form,
+  a new address gets an account and an existing address gets the redirect to login;
+  closing that needs mailbox verification on guest registration (items 8 and 13).
+  The public page (`register/invite/{token}`, and `invite/{token}` for a guest)
+  shows the organization name, the role, the invited name and the invited e-mail
+  address to anyone who holds the token; before this round that was already true
+  for the link of a new address, while the link of an existing account
+  (`invite/{token}/accept`) needed a signed-in matching user. The token is 48
+  random characters (a bearer secret); accepted with D5 (keep the link in the
+  answer). Tests: `InviteUniformResponseTest` (TESTING.md).
+- **Escaping of other accounts' text in page scripts (S15).** View-only change (no
+  PHP): the invite pop-up result in `user/org-admin/index.blade.php` and
+  `overview.blade.php` is built from created DOM nodes with `textContent`; the
+  Team-page drawer, the platform-admin user drawer (`admin/rbac/users.blade.php`)
+  use a local `escapeHtml`; the three inline `confirm('...{{ name }}...')` handlers
+  (`admin/rbac/organization-show.blade.php`, `user/org-admin/api-tokens.blade.php`,
+  `admin/rbac/service-accounts.blade.php`) pass their message through `@js(...)`.
+  The dead `confirm_existing` / `existing` branches and `confirmExistingAssign` are
+  removed. PHPUnit cannot execute the page JavaScript: the proof is a static source
+  guard plus rendered pages with hostile names (`HtmlSinkGuardTest`) and the manual
+  browser checklist in the `REVIEW.md` of
+  `.claude/tasks/client-audit-2-round2-fixes/` (untracked; back it up).
+- **Removing a last role needs a confirmation (L08).**
+  `RoleAssignmentService::isLastActiveRole(UserOrgRole $row)` is true for an active
+  row when the member has no other active row in that org.
+  `DELETE org-admin/roles/{userOrgRole}`: after the org check (404 with
+  `DenialRecorder`) and `requireOrgLevel(user_management, F)`, and before
+  `deactivate`, a last role without a truthy `confirm_last_role` writes nothing and
+  answers 422 `{last_role: true, message}` for JSON requests (`expectsJson()`) or
+  `back()` with the flash `error` otherwise. The message names the member ("<Name>
+  has no other role in <Org>. Removing this role removes <Name> from the
+  organization. Confirm to continue."), or says "You" when the row is the acting
+  user's own. `POST org-admin/peel-off` applies the same rule to the acting user's
+  own last role (422 `{success: false, last_role: true, message}`; it reads
+  `confirm_last_role` with `$request->boolean()`, no validation rule).
+  `POST org-admin/roles` (`assignRole`) keeps all its keys and gains
+  `peel_off_last_role` (true only when `peel_off_candidate` is true and the
+  assigner's own row for that role is his only active role in the org). A row that
+  is already inactive or not the last role behaves as before, with or without the
+  parameter; with the parameter the call is exactly the old one, including the
+  `role_assignment_logs` row. The confirmation is a UX safeguard, not a lock: no
+  transaction or row lock sits between `isLastActiveRole` and `deactivate`, so (by
+  code reading; the tests are single-process and nothing ran on MariaDB) two
+  simultaneous removals of a member's two roles each see the other role as still
+  active and both succeed, and the member loses both without a confirmation. Not
+  covered: the platform-admin removal (`Admin\RbacController::removeRole`) and the
+  ownership transfer (`OrgSettingsController::transferOwnership`, section 12 item
+  19), which deletes the sitting Owner's row and tells the user only that the Owner
+  role is lost. Not blocked: removing the org's last Owner
+  (the code never required an Owner; the Team page adds one sentence to the warning
+  through a `soleOwner` flag computed in the view, no server rule). The Team page
+  (`user/org-admin/index.blade.php`) shows a modal for a member with one role and
+  keeps the plain `confirm()` otherwise.
+- **Owner exemption for the registration-bundle pairs (N01, option B).**
+  `SodService::conflictsFor` keeps the sole-member shortcut. Then, only when a
+  conflicting role is held, it drops the held roles that are in
+  `config('rbac.onboarding.bundles.buyer_small')` (matched by `roles.slug`) when
+  the incoming role is also in that bundle and the target holds an ACTIVE
+  `organization_owner` row in THIS org (private `holdsOwnerRole`). With the seeded
+  rules that is exactly Procurement Manager + Executive Approver and Estimator +
+  Executive Approver, in both orders. Everything else is unchanged, request by
+  request: Organization Admin and every other role, every other pair for an Owner
+  (Requisitioner, AP / Invoice Clerk, Financial Admin pairs), an Owner whose Owner
+  row is inactive, and an Owner of another org stay refused with the 422
+  `sod_conflict` (what is not stopped is the chain of two requests through the Owner
+  role, described at the end of this bullet). The rule is
+  evaluated in the service, so the Team page, the platform-admin screen, invite
+  acceptance and delegation behave the same. `sod_conflict_rules` is not touched.
+  An exempt assignment made through `RoleAssignmentService::assign` (Team page,
+  invite acceptance, platform-admin screen) is written to `role_assignment_logs`
+  like any other, with its assigner. That does not extend to how someone became an
+  Owner: the ownership transfer grants `organization_owner` outside `assign()`
+  (`OrgSettingsController::transferOwnership`), so it runs no SoD check and writes
+  no `assigned_by` and no `role_assignment_logs` row (neither `assigned` for the new
+  Owner nor `removed` for the old one); an Owner made that way is exempt like any
+  other (section 12 item 19). A05 is
+  not changed: with another approver present the Owner still cannot approve his own
+  order (`ApprovalRoutingService`); as the sole approver the order auto-approves and
+  is logged (`auto_approved`). Narrows what the client plan section 6.2 calls
+  "deliberately different people" for the Owner; consistent with plan 6.1, which
+  hands the same four roles to a solo or small buyer org at registration. The exempt
+  set is the configured bundle, `rbac.onboarding.bundles.buyer_small`, read at every
+  assignment. With the seeded matrix every role in it other than the Owner
+  (Procurement Manager, Estimator, Executive Approver) holds each of its permission
+  groups at the same or a weaker level than the Owner role, so the exemption adds no
+  permission to a seeded Owner; `SodOwnerBundleExemptionTest::test_every_role_the_owner_exemption_covers_is_covered_by_the_owner_roles_grants`
+  pins that for the seeded matrix. It is a property of the seed, not a definition
+  and not a statement about the running system: any `user_management` F holder can
+  edit the live `role_permissions` rows (section 12 item 6). Because the set follows
+  the config, a role added to the onboarding bundle later (for example Financial
+  Admin for solo orgs) widens every Owner's exemption to each SoD rule between that
+  role and the other bundle roles with no other change (the test above fails only
+  if that role's seeded grants are not covered by the Owner's), and a rule an admin
+  adds between two bundle roles is exempt for an Owner as well; change the bundle
+  knowingly. Not stopped: a `user_management` F holder who is not yet an Owner (the
+  seeded Estimator, an Organization Admin) can take the Owner role himself and then
+  the pair, in two requests; asking for the pair directly is still a 422 (section 12
+  item 6).
+- **The creator of an estimate or RFQ becomes a project member (M12).**
+  `ProjectMember::enrolCreator(Project $project, int $userId)` does nothing (returns
+  null) when the user has no active `user_org_roles` row in the project's org (a
+  listed universal admin working in another org); otherwise it calls
+  `ProjectMember::enrol($project, $userId, $project->org_id, $userId)`: transactional,
+  idempotent, an `added` or `reactivated` `project_member_logs` row performed by the
+  creator, nothing for an already active member. Called in `QuoteController::store`
+  (after validation and the customer / list lookups), `createFromList` (after the
+  list lookup), `duplicate` (after `writableQuote`'s visibility and level check)
+  and `RfqController::store` (first statement of the existing transaction, after the
+  visibility rule and the 403), each immediately before the create and therefore
+  after authorisation. Project creation already enrolled the creator and is
+  unchanged. Effect: an Owner (or other org-wide creator) who creates an estimate or
+  RFQ gets one active `project_members` row and one log row; his org-wide
+  visibility is unchanged. A creator removed later loses access to his own estimates
+  as before (section 5). Not enrolled by design: orders, lists, customers,
+  crosswalk rows (no project membership concept). The meaning of the client's
+  sentence is assumed from the document trail (no sheet row was available); if the
+  failing step turns out to be production data (quotes with NULL `project_id`,
+  creators without a membership row) the cause is data, not code. Atomicity: at the
+  three estimate sites (`store`, `createFromList`, `duplicate`) the enrolment
+  commits on its own (`ProjectMember::enrol` opens its own transaction),
+  immediately before `Quote::create`; the estimate flows are not transactional
+  (`QuoteController` has no `DB::` call; items, attachments and the catalogue sync
+  are written after the create). A database failure between the two leaves the
+  creator enrolled with no estimate: one roster row and one log row for an
+  org-wide creator, nothing for a member, and a creator who had been removed is
+  re-added, exactly as on success. The realistic trigger is two simultaneous
+  creates colliding on the unique `quotes.quote_number`: `Quote::generateQuoteNumber`
+  derives the number from the highest one issued this year (soft-deleted included)
+  plus a non-atomic `exists()` check, so both requests can pick the same number and
+  the second fails on the unique index with a 500. That is the same state as
+  creating an estimate and deleting it, because membership does not depend on the
+  estimate's lifecycle. `RfqController::store` enrols inside the RFQ transaction,
+  so there the enrolment rolls back with the RFQ.
+- **Invite pop-up buttons (W12).** View-only: `resetInviteModal` is defined, a
+  non-2xx or a missing `link` shows the server message in an alert box instead of
+  "undefined", the result has its own buttons (Done / Invite another person, or Try
+  again / Close), copy and required-field messages are inline instead of `alert()`.
+  Anything else the client means by W12 waits for his sheet row.
+- **Not rebuilt (W10, L05, L06, S13); replayed in the client's words.** No code
+  change for these in this round; sections 4.6 and 4.7 describe them.
+  `Round2ClientWordingReplayTest` (verification only, 2026-11-13; counts in
+  TESTING.md) replays each in the client's own steps, in audit and enforce mode,
+  and passes. W10: an Estimator creates a project; the Owner, who is not a member,
+  finds it in the project list and on the projects page, opens it, is not enrolled
+  by opening it, and no `blocked` / `would_block` row is written; a non-org-wide
+  non-member and another org's Owner do not see it. L05: in an org with several
+  members whose Owner is the only approver, an RFQ conversion gives status
+  `processing` and exactly one `auto_approved` row (who, org, order number, date),
+  shown with its label on `org-admin/audit-log?tab=enforcement`; a sole approver
+  approving his own pending order writes a `self_approved` row; with a second
+  approver there is no row. L06: a delegation grant and its revoke each write one
+  row, and a delegate's request writes one `delegated_action` row ("acting for
+  <principal>"), all shown on the same page. Known limitation, pinned on purpose:
+  the `delegated_action` row carries the route pattern (`orders/{order}/approve`)
+  and the principal, not the order number or id; the order's own `approved_by`
+  records the delegate (PLAN R9, not approved). S13: with `APP_DEBUG=true`, JSON
+  403, 404, 422 and 500 answers (a thrown `RuntimeException`, `TypeError` and
+  `QueryException` included) carry no `exception`, `file`, `line` or `trace` key and
+  no class name, SQL text or server path. Not testable here: the HTML error page and
+  a stale `bootstrap/cache/config.php`. S13 remainder is server configuration
+  (`APP_DEBUG=false`, `config:cache`); the new route also needs the route cache
+  refreshed where one exists (section 10).
 
 ## 5. Quote (estimate) visibility
 
@@ -665,6 +871,14 @@ after the real run: it must report nothing left to do.
 - Release gates: back up and test-restore the database; run the backfill
   (section 8) before or with any release that contains 5a; do not run 5b in the
   same release.
+- Route cache (client audit 2 round 2): the release adds the public route
+  `GET invite/{token}` (`invite.entry`). If the server has a cached route file
+  (`bootstrap/cache/routes-v7.php`), every newly mailed `/invite/{token}` link
+  answers 404 until the cache is refreshed, while the old `/register/invite/{token}`
+  and `/invite/{token}/accept` links keep working. After uploading the code run
+  `php artisan route:clear` (or `route:cache` to rebuild it); `optimize:clear` also
+  works but removes the config cache too, so run `config:cache` again afterwards
+  (`APP_DEBUG=false`, S13). The local checkout has no route cache file.
 
 ## 10c. Customers are organization data
 
@@ -746,7 +960,26 @@ assume rep-agency seller authorization is enforced until this is fixed.
    organization that uses the role (roles are global), and `updateRolePermission`
    does not call `PermissionMatrix::flush()`, so the effect appears after the cache
    expires (`PermissionMatrix::CACHE_TTL` is 86400 s, 24 h). Decision pending with
-   the human; not changed.
+   the human; not changed. Round 2 (section 4.8, N01-B) consequence: because
+   `assignRole` lets any `user_management` F holder grant `organization_owner` to
+   himself, a seeded Estimator can reach Estimator + Executive Approver in two
+   requests (first `organization_owner`, then `executive_approver`, which the Owner
+   exemption allows); asking for `executive_approver` directly is still a 422. The
+   seeded Owner role covers Estimator, Procurement Manager and Executive Approver in
+   every permission group (pinned by
+   `SodOwnerBundleExemptionTest::test_every_role_the_owner_exemption_covers_is_covered_by_the_owner_roles_grants`;
+   that pins the seed, not the live `role_permissions`, which this very item lets
+   any `user_management` F holder edit), no code decides anything from those role
+   names, and `approverPool` is a query over `role_permissions` (`approval_authority`
+   F or A). So with the seeded matrix the extra row adds no permission, no
+   approver-pool membership and no routing change, and A05 is unchanged. What the
+   chain leaves behind: if the Owner row is removed later, the account keeps
+   Estimator + Executive Approver (SoD never revokes a pair already held). SoD on the
+   Team page therefore guards honest mistakes, not a `user_management` F holder. An
+   ownership transfer (item 19) is a second way to become Owner outside the
+   assignment engine. Real fix, not done: only an active Owner (or a listed universal
+   admin) may grant or remove `organization_owner`. Decision pending with the human,
+   together with item 10.
 7. **Stale-session approvals** (Verifier C2, HIGH, pre-existing).
    `OrderApprovalController::index` (:25) and `authorizeApprovalAction` (:88),
    and `CheckoutController` (:211, :231), compare the order's org with
@@ -793,14 +1026,20 @@ assume rep-agency seller authorization is enforced until this is fixed.
 11. **`POST org-admin/invite` is not throttled** (Verifier C5) and sends an
     e-mail with an owner-chosen name and organization name to any address,
     registered or not. Decision pending with the human; not fixed by client
-    audit 2 Phase A.
-12. **Invite modal script ignores error responses** (Verifier C4). The script in
-    `user/org-admin/overview.blade.php` (around :301-331) and `index.blade.php`
-    (around :560-590) reads only an `error` key; any non-2xx JSON (403
-    `rbac_error`, 422 validation body) falls into the success branch and prints
-    `undefined` as the link. The `confirm_existing` / `existing` branches are
-    unreachable now and may stay. Decision pending with the human; not fixed by
-    client audit 2 Phase A.
+    audit 2 Phase A. Round 2 (section 4.8, O11): deliberately still not
+    throttled; the answer no longer carries any information about the address,
+    so a throttle would not stop an enumeration. The mail-volume concern stays.
+12. **Invite modal script ignored error responses** (Verifier C4; fixed in round 2,
+    see the end of this item). Before round 2 the script in
+    `user/org-admin/overview.blade.php` and `index.blade.php` read only an `error`
+    key; any non-2xx JSON (403 `rbac_error`, 422 validation body) fell into the
+    success branch and printed `undefined` as the link. Not fixed by client audit 2
+    Phase A. Round 2 (section 4.8, S15 and W12): both pop-up scripts
+    (`window.sendInvite` and `doInviteFetch` in each file) are rewritten; a
+    non-2xx answer or a missing `link` shows the server message, the unreachable
+    branches are removed (they were also the S15 sinks). The behaviour of page
+    JavaScript has no automated test (PHPUnit cannot run it; `HtmlSinkGuardTest`
+    scans the source and renders the pages with hostile data).
 13. **Inviter authority on the guest new-hire path** (optional follow-up from
     Verifier A1). Inviter authority is checked at accept for existing accounts
     (section 4.5) but not on the guest path (`Auth\InviteController::register`
@@ -811,7 +1050,11 @@ assume rep-agency seller authorization is enforced until this is fixed.
     to `register` and `show`; a pending-invites list with revoke on the Team
     page. `InviteInviterAuthorityTest::test_the_guest_register_link_is_deliberately_unchanged`
     pins today's behaviour and must be flipped if this is approved. Decision
-    pending with the human; not fixed by client audit 2 Phase A.
+    pending with the human; not fixed by client audit 2 Phase A. Round 2
+    (section 4.8): the guest path is still unchecked for the inviter, and it
+    is the residual O11 leak (the token holder can tell an existing address from
+    a new one by submitting the register form); `invite.entry` (guest) renders the
+    same page as `show` and `register` only gained the existing-address redirect.
 14. **Signup verification e-mail (client audit 2, B06(a)).** The code sends exactly
     one `VerifyEmail` per registration (proof test `RegistrationTest`), so a missing
     mail is a server-side cause (mailer config, SMTP, logs). Two facts to know
@@ -857,8 +1100,41 @@ assume rep-agency seller authorization is enforced until this is fixed.
     limit, under the heading "My Projects". For an org-wide viewer (section 4.7)
     that is every quote of the org (load and wording). Optional follow-up: a limit
     and a different heading. Decision pending with the human; not changed.
+19. **Ownership transfer sits outside the role-assignment engine (pre-existing;
+    found while checking N01 in round 2).**
+    `OrgSettingsController::transferOwnership` hard-deletes the sitting Owner's
+    `user_org_roles` row and grants `organization_owner` to the new Owner with
+    `updateOrCreate`, inside one transaction. It does not call
+    `RoleAssignmentService`, so there is no SoD check, no `assigned_by` /
+    `assigned_at` on the new row and no `role_assignment_logs` row (no `assigned`
+    for the new Owner, no `removed` for the old one); only a listed universal
+    admin's override writes an audit row. Consequences: how a user became Owner is
+    not always in the role log; an Owner made this way is covered by the N01
+    exemption (section 4.8) like any other; and an Owner who holds no other role
+    leaves the organization when he transfers, with no last-role confirmation (L08,
+    section 4.8, covers the Team page and peel-off only), because the Settings modal
+    says only that the Owner role is lost. Options: route the transfer through
+    `assign()` / `deactivate()` (SoD, log) and add "and you will leave the
+    organization" to the modal when he holds no other role. Decision pending with
+    the human; not changed by round 2.
 
 ## Change log (newest first)
+
+- 2026-11-13 - Client audit 2, round 2 (items 1 and 2 of the client's list: M12,
+  S15, O11, N01, L08, W12; W10, L05, L06, S13 verified only): the invite answer
+  and mail are the same for every address and the link is the new public
+  `GET invite/{token}` (`invite.entry`); the guest register form refuses an
+  address that already has an account with a redirect to login; removing a
+  member's last role (Team page `DELETE org-admin/roles/{id}` and
+  `POST org-admin/peel-off`) needs `confirm_last_role`, the assign answer gains
+  `peel_off_last_role`; an Organization Owner is exempt from the two SoD pairs
+  inside the registration bundle in his own org; the creator of an estimate or RFQ
+  is enrolled on its project (`ProjectMember::enrolCreator`); page scripts and
+  inline `confirm()` handlers no longer put other accounts' text into HTML
+  (views). Section 4.8 added; sections 2, 4.5, 4.6, 4.7 and open items 11, 12, 13
+  annotated. No migration, config, env or route map change; one new public route
+  (`route-list.json` 293 -> 294 routes). Seven existing test classes changed
+  (TESTING.md).
 
 - 2026-10-27 - Client audit 2, Phase B batch 2, W10 (owner sees every project):
   `PermissionService::seesAllOrgProjects` (the user's OWN active roles grant

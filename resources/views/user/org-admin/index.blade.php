@@ -267,6 +267,7 @@
             <div class="modal-body pt-2">
                 {{-- Step 1: form --}}
                 <div id="inviteFormStep">
+                    <div id="inviteFormMessage" class="alert alert-danger py-2 small" role="alert" style="display:none"></div>
                     <div class="mb-3">
                         <label class="form-label">Email address</label>
                         <input type="email" id="inviteEmail" class="form-control" placeholder="e.g. coworker@company.com">
@@ -324,10 +325,12 @@
                 You currently have the <strong id="peelOffRoleName"></strong> role assigned to your account.
                 Would you like to remove it from your account?
             </p>
+            <div class="alert alert-danger text-start py-2 mb-3" id="peelOffLastRoleWarning" role="alert" style="display:none;font-size:.8rem"></div>
             <div class="bg-light rounded p-2 mb-4 text-start" style="font-size:.8rem">
                 <i class="ti ti-info-circle me-1 text-muted"></i>
                 Keeping both is fine — removing transfers sole use to the new assignee.
             </div>
+            <div class="alert alert-danger text-start py-2 mb-3" id="peelOffError" role="alert" style="display:none;font-size:.8rem"></div>
             <button type="button" class="btn text-white w-100 mb-2" style="background:var(--wb-maroon)" id="peelOffConfirmBtn">
                 Yes, remove from mine
             </button>
@@ -336,12 +339,35 @@
     </div>
 </div>
 
+{{-- ── Last-role modal ── --}}
+<div class="modal fade" id="lastRoleModal" tabindex="-1" aria-labelledby="lastRoleTitle">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow text-center p-4">
+            <div class="peel-icon mx-auto mb-3" style="background:#fdecea">
+                <i class="ti ti-alert-triangle text-danger" style="font-size:1.75rem"></i>
+            </div>
+            <h5 class="fw-bold mb-2" id="lastRoleTitle"></h5>
+            <p class="text-muted small mb-2" id="lastRoleBody"></p>
+            <p class="text-danger small fw-semibold mb-3" id="lastRoleOwnerNote" style="display:none"></p>
+            <div class="d-flex gap-2 justify-content-center mt-2">
+                <button type="button" class="btn btn-outline-secondary" id="lastRoleCancelBtn" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="lastRoleConfirmBtn">Remove from organization</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@php
+    $ownerRowCount = $members->sum(fn ($m) => $m->org_roles->filter(fn ($a) => $a->role->slug === 'organization_owner')->count());
+@endphp
 <script>
 (function () {
     const RBAC = {
         assignUrl: "{{ route('org-admin.roles.assign') }}",
         peelOffUrl: "{{ route('org-admin.peel-off') }}",
         csrf: "{{ csrf_token() }}",
+        userId: {{ (int) auth()->id() }},
+        orgName: @json($org->name),
         canManageRoles: {{ (auth()->user() && (auth()->user()->role === 'admin' || (\App\Support\Rbac\CurrentOrg::sessionOrg((int) auth()->id()) && app(\App\Services\Rbac\PermissionService::class)->checkPermission(auth()->id(), (int) \App\Support\Rbac\CurrentOrg::sessionOrg((int) auth()->id()), 'user_management', 'F')))) ? 'true' : 'false' }},
     };
 
@@ -355,7 +381,7 @@
             joined: @json($member->created_at ? $member->created_at->format('M d, Y') : '—'),
             roles: [
                 @foreach ($member->org_roles as $assignment)
-                { id: {{ $assignment->id }}, roleId: {{ $assignment->role_id }}, roleName: @json($assignment->role->name) },
+                { id: {{ $assignment->id }}, roleId: {{ $assignment->role_id }}, roleName: @json($assignment->role->name), soleOwner: {{ $assignment->role->slug === 'organization_owner' && $ownerRowCount === 1 ? 'true' : 'false' }} },
                 @endforeach
             ],
         },
@@ -387,17 +413,34 @@
         document.querySelectorAll('.member-row').forEach(r => r.classList.remove('selected'));
     };
 
+    function escapeHtml(str) {
+        if (str == null) return '';
+        return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    let drawerMemberId = null;
+
+    document.getElementById('drawerBody').addEventListener('click', function (e) {
+        const btn = e.target.closest('[data-action]');
+        if (!btn) return;
+        if (btn.dataset.action === 'remove-role') window.removeRole(Number(btn.dataset.assignmentId), drawerMemberId);
+        else if (btn.dataset.action === 'show-add-role') window.showAddRoleForm(drawerMemberId);
+        else if (btn.dataset.action === 'assign-role') window.assignRoleFromDrawer(drawerMemberId);
+        else if (btn.dataset.action === 'hide-add-role') window.hideAddRoleForm();
+    });
+
     function renderDrawer(m) {
-        const initials = m.name.substring(0,2).toUpperCase();
+        drawerMemberId = m.id;
+        const initials = escapeHtml(m.name.substring(0,2).toUpperCase());
         const rolesList = m.roles.map(r =>
             `<span class="role-tag" style="display:inline-flex;align-items:center;gap:.3rem">
-                ${r.roleName}
-                ${RBAC.canManageRoles ? `<button onclick="removeRole(${r.id}, ${m.id})" class="btn p-0 border-0 bg-transparent text-muted" style="line-height:1;font-size:.8rem" title="Remove">×</button>` : ''}
+                ${escapeHtml(r.roleName)}
+                ${RBAC.canManageRoles ? `<button type="button" data-action="remove-role" data-assignment-id="${r.id}" class="btn p-0 border-0 bg-transparent text-muted" style="line-height:1;font-size:.8rem" title="Remove">×</button>` : ''}
             </span>`
         ).join('') || '<span class="text-muted small">No roles assigned</span>';
 
         const roleOptions = rolesData.map(r =>
-            `<option value="${r.id}">${r.category} — ${r.name}</option>`
+            `<option value="${r.id}">${escapeHtml(r.category)} — ${escapeHtml(r.name)}</option>`
         ).join('');
 
         document.getElementById('drawerBody').innerHTML = `
@@ -406,15 +449,15 @@
                       style="background:var(--wb-maroon);color:#fff;font-size:1.2rem;font-weight:700;width:72px;height:72px">
                     ${initials}
                 </span>
-                <h6 class="fw-bold mt-3 mb-0">${m.name}</h6>
-                <small class="text-muted">${m.email}</small>
-                <br><small class="text-muted">Joined ${m.joined}</small>
+                <h6 class="fw-bold mt-3 mb-0">${escapeHtml(m.name)}</h6>
+                <small class="text-muted">${escapeHtml(m.email)}</small>
+                <br><small class="text-muted">Joined ${escapeHtml(m.joined)}</small>
             </div>
 
             <div class="mb-4">
                 <div class="d-flex justify-content-between align-items-center mb-2">
                     <label class="form-label fw-semibold mb-0">Current Roles</label>
-                    ${RBAC.canManageRoles ? `<button class="btn btn-xs btn-outline-secondary btn-sm" onclick="showAddRoleForm(${m.id})"><i class="ti ti-plus"></i> Add role</button>` : ''}
+                    ${RBAC.canManageRoles ? `<button type="button" class="btn btn-xs btn-outline-secondary btn-sm" data-action="show-add-role"><i class="ti ti-plus"></i> Add role</button>` : ''}
                 </div>
                 <div id="drawerRoles">${rolesList}</div>
                 ${RBAC.canManageRoles ? `
@@ -424,9 +467,9 @@
                         ${roleOptions}
                     </select>
                     <div class="d-flex gap-2">
-                        <button class="btn btn-sm text-white flex-grow-1" style="background:var(--wb-maroon)"
-                                onclick="assignRoleFromDrawer(${m.id})">Assign</button>
-                        <button class="btn btn-sm btn-outline-secondary" onclick="hideAddRoleForm()">Cancel</button>
+                        <button type="button" class="btn btn-sm text-white flex-grow-1" style="background:var(--wb-maroon)"
+                                data-action="assign-role">Assign</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" data-action="hide-add-role">Cancel</button>
                     </div>
                 </div>` : ''}
             </div>
@@ -468,32 +511,114 @@
         if (!data.success) { alert(data.message || 'Could not assign role.'); return; }
 
         if (data.peel_off_candidate) {
-            showPeelOff(data.role_name, data.role_id, memberId);
+            showPeelOff(data.role_name, data.role_id, memberId, !!data.peel_off_last_role);
         } else {
             location.reload();
         }
     };
 
-    window.removeRole = async function(assignmentId, memberId) {
-        if (!confirm('Remove this role from the member?')) return;
+    function submitRoleRemoval(assignmentId, confirmLastRole) {
         const form = document.createElement('form');
         form.method = 'POST';
         form.action = `/org-admin/roles/${assignmentId}`;
-        form.innerHTML = `<input name="_token" value="${RBAC.csrf}"><input name="_method" value="DELETE">`;
+        const fields = { _token: RBAC.csrf, _method: 'DELETE' };
+        if (confirmLastRole) fields.confirm_last_role = '1';
+        Object.keys(fields).forEach(function (key) {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = key;
+            input.value = fields[key];
+            form.appendChild(input);
+        });
         document.body.appendChild(form);
         form.submit();
+    }
+
+    window.removeRole = function(assignmentId, memberId) {
+        const m = membersData[memberId];
+        const role = m ? m.roles.find(r => r.id === assignmentId) : null;
+        if (m && role && m.roles.length === 1) {
+            showLastRoleModal(m, role);
+            return;
+        }
+        if (!confirm('Remove this role from the member?')) return;
+        submitRoleRemoval(assignmentId, false);
     };
 
+    // ── Last role of a member ────────────────────────────────────────────────
+    function showLastRoleModal(m, role) {
+        const isSelf = m.id === RBAC.userId;
+        const org = RBAC.orgName;
+
+        document.getElementById('lastRoleTitle').textContent = isSelf
+            ? 'Remove your last role?'
+            : 'Remove ' + m.name + "'s last role?";
+        document.getElementById('lastRoleBody').textContent = isSelf
+            ? 'This is your only role in ' + org + '. Removing it removes you from the organization and you lose access immediately; you can only come back by being invited again.'
+            : role.roleName + ' is the only role ' + m.name + ' has in ' + org + '. Removing it removes ' + m.name + ' from the organization: they lose access to its projects, estimates, orders and approvals, and can only come back by being invited again.';
+
+        const ownerNote = document.getElementById('lastRoleOwnerNote');
+        if (role.soleOwner) {
+            ownerNote.textContent = (isSelf ? 'You are' : m.name + ' is') + ' also the only Owner of ' + org + '. After this the organization has no Owner.';
+            ownerNote.style.display = '';
+        } else {
+            ownerNote.textContent = '';
+            ownerNote.style.display = 'none';
+        }
+
+        const confirmBtn = document.getElementById('lastRoleConfirmBtn');
+        confirmBtn.disabled = false;
+        confirmBtn.onclick = function () {
+            confirmBtn.disabled = true;
+            submitRoleRemoval(role.id, true);
+        };
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('lastRoleModal')).show();
+    }
+
+    document.getElementById('lastRoleModal').addEventListener('shown.bs.modal', function () {
+        document.getElementById('lastRoleCancelBtn').focus();
+    });
+
     // ── Peel-off ─────────────────────────────────────────────────────────────
-    function showPeelOff(roleName, roleId, memberId) {
+    function showPeelOff(roleName, roleId, memberId, lastRole) {
         document.getElementById('peelOffRoleName').textContent = roleName;
+
+        const warning = document.getElementById('peelOffLastRoleWarning');
+        if (lastRole) {
+            warning.textContent = 'This is your only role in ' + RBAC.orgName + '. Removing it removes you from the organization and you lose access immediately; you can only come back by being invited again.';
+            warning.style.display = '';
+        } else {
+            warning.textContent = '';
+            warning.style.display = 'none';
+        }
+
+        const error = document.getElementById('peelOffError');
+        error.textContent = '';
+        error.style.display = 'none';
+
         document.getElementById('peelOffConfirmBtn').onclick = async function() {
             const modal = bootstrap.Modal.getInstance(document.getElementById('peelOffModal'));
-            await fetch(RBAC.peelOffUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': RBAC.csrf, 'Accept': 'application/json' },
-                body: JSON.stringify({ role_id: roleId }),
-            });
+            const payload = { role_id: roleId };
+            if (lastRole) payload.confirm_last_role = true;
+            let failure = null;
+            try {
+                const res = await fetch(RBAC.peelOffUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': RBAC.csrf, 'Accept': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                if (!res.ok) {
+                    const body = await res.json().catch(() => null);
+                    failure = (body && typeof body.message === 'string' && body.message) ? body.message : 'Something went wrong. Please try again.';
+                }
+            } catch (e) {
+                failure = 'Something went wrong. Please try again.';
+            }
+            if (failure) {
+                error.textContent = failure;
+                error.style.display = '';
+                return;
+            }
             modal.hide();
             location.reload();
         };
@@ -501,41 +626,201 @@
     }
 
     // ── Invite modal ─────────────────────────────────────────────────────────
-    window.openInviteModal = function() {
-        // Reset to form step
-        document.getElementById('inviteFormStep').style.display   = '';
+    const INVITE_GENERIC_ERROR = 'Something went wrong. Please try again.';
+
+    function inviteEl(tag, className, text) {
+        const node = document.createElement(tag);
+        if (className) node.className = className;
+        if (text != null) node.textContent = text;
+        return node;
+    }
+
+    function hideInviteFormMessage() {
+        const box = document.getElementById('inviteFormMessage');
+        box.textContent = '';
+        box.style.display = 'none';
+    }
+
+    function showInviteFormMessage(text, field) {
+        const box = document.getElementById('inviteFormMessage');
+        box.textContent = text;
+        box.style.display = '';
+        field.focus();
+    }
+
+    function showInviteForm() {
         document.getElementById('inviteLinkStep').style.display    = 'none';
+        document.getElementById('inviteFormStep').style.display    = '';
         document.getElementById('inviteModalFooter').style.display = '';
-        document.getElementById('inviteBtnText').textContent       = 'Send invite email';
-        document.getElementById('inviteCopyBtnText').textContent   = 'Copy link instead';
+    }
+
+    function finishInviteRequest() {
+        document.getElementById('inviteSubmitBtn').disabled = false;
+        document.getElementById('inviteCopyBtn').disabled   = false;
+        document.getElementById('inviteBtnText').textContent     = 'Send invite email';
+        document.getElementById('inviteCopyBtnText').textContent = 'Copy link instead';
+        document.getElementById('inviteBtnSpinner').style.display     = 'none';
+        document.getElementById('inviteCopyBtnSpinner').style.display = 'none';
+    }
+
+    function resetInviteModal() {
+        showInviteForm();
+        hideInviteFormMessage();
+        finishInviteRequest();
+        document.getElementById('inviteLinkResult').textContent = '';
         document.getElementById('inviteEmail').value = '';
         document.getElementById('inviteName').value  = '';
         document.getElementById('inviteRole').value  = '';
-        new bootstrap.Modal(document.getElementById('inviteModal')).show();
+    }
+
+    document.getElementById('inviteModal').addEventListener('show.bs.modal', resetInviteModal);
+    ['input', 'change'].forEach(function (evt) {
+        document.getElementById('inviteFormStep').addEventListener(evt, hideInviteFormMessage);
+    });
+
+    window.openInviteModal = function() {
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('inviteModal')).show();
     };
 
     window.sendInvite = function(sendEmail) {
-        const email  = document.getElementById('inviteEmail').value.trim();
-        const name   = document.getElementById('inviteName').value.trim();
-        const roleId = document.getElementById('inviteRole').value;
-        if (!email) { alert('Email address is required.'); return; }
-        if (!name)  { alert('Full name is required.'); return; }
-        if (!roleId){ alert('Please select a role.'); return; }
+        const emailInput = document.getElementById('inviteEmail');
+        const nameInput  = document.getElementById('inviteName');
+        const roleSelect = document.getElementById('inviteRole');
+        const email  = emailInput.value.trim();
+        const name   = nameInput.value.trim();
+        const roleId = roleSelect.value;
+        if (!email)  { showInviteFormMessage('Email address is required.', emailInput); return; }
+        if (!name)   { showInviteFormMessage('Full name is required.', nameInput); return; }
+        if (!roleId) { showInviteFormMessage('Please select a role.', roleSelect); return; }
+        hideInviteFormMessage();
 
         // Disable both buttons and show spinner on the one clicked
-        const emailBtn   = document.getElementById('inviteSubmitBtn');
-        const copyBtn    = document.getElementById('inviteCopyBtn');
         const activeText = document.getElementById(sendEmail ? 'inviteBtnText' : 'inviteCopyBtnText');
         const spinner    = document.getElementById(sendEmail ? 'inviteBtnSpinner' : 'inviteCopyBtnSpinner');
-        emailBtn.disabled = true;
-        copyBtn.disabled  = true;
+        document.getElementById('inviteSubmitBtn').disabled = true;
+        document.getElementById('inviteCopyBtn').disabled   = true;
         activeText.textContent = sendEmail ? 'Sending…' : 'Generating…';
         spinner.style.display = 'inline-block';
 
-        doInviteFetch({ email, name, role_id: roleId, send_email: sendEmail }, emailBtn, copyBtn, email, name, sendEmail);
+        doInviteFetch({ email, name, role_id: roleId, send_email: sendEmail }, email, name, sendEmail);
     };
 
-    function doInviteFetch(payload, emailBtn, copyBtn, email, name, sendEmail) {
+    function inviteErrorMessage(body) {
+        if (body && typeof body === 'object') {
+            if (body.errors && typeof body.errors === 'object') {
+                const first = Object.values(body.errors)[0];
+                const text = Array.isArray(first) ? first[0] : first;
+                if (typeof text === 'string' && text !== '') return text;
+            }
+            if (typeof body.message === 'string' && body.message !== '') return body.message;
+            if (typeof body.error === 'string' && body.error !== '') return body.error;
+        }
+        return INVITE_GENERIC_ERROR;
+    }
+
+    function showInviteResult(nodes) {
+        const box = document.getElementById('inviteLinkResult');
+        box.textContent = '';
+        nodes.forEach(function (node) { box.appendChild(node); });
+        document.getElementById('inviteFormStep').style.display    = 'none';
+        document.getElementById('inviteModalFooter').style.display = 'none';
+        document.getElementById('inviteLinkStep').style.display    = '';
+    }
+
+    function showInviteError(message) {
+        const box = inviteEl('div', 'alert alert-danger');
+        box.appendChild(inviteEl('i', 'ti ti-alert-circle me-2'));
+        box.appendChild(document.createTextNode(message));
+
+        const retry = inviteEl('button', 'btn btn-sm text-white', 'Try again');
+        retry.type = 'button';
+        retry.style.background = 'var(--wb-maroon)';
+        retry.addEventListener('click', showInviteForm);
+
+        const close = inviteEl('button', 'btn btn-sm btn-outline-secondary', 'Close');
+        close.type = 'button';
+        close.setAttribute('data-bs-dismiss', 'modal');
+
+        const actions = inviteEl('div', 'd-flex gap-2 mt-2');
+        actions.appendChild(retry);
+        actions.appendChild(close);
+        showInviteResult([box, actions]);
+    }
+
+    function showInviteSuccess(body, email, name, sendEmail) {
+        const nodes = [];
+
+        if (sendEmail) {
+            const status = inviteEl('div', (body.email_sent ? 'alert alert-success' : 'alert alert-warning') + ' py-2 mb-3');
+            if (body.email_sent) {
+                status.appendChild(inviteEl('i', 'ti ti-mail-check me-1'));
+                status.appendChild(document.createTextNode('Invite email sent to '));
+                status.appendChild(inviteEl('strong', '', email));
+            } else {
+                status.appendChild(inviteEl('i', 'ti ti-alert-triangle me-1'));
+                status.appendChild(document.createTextNode('Email could not be delivered — copy the link below and send it manually.'));
+            }
+            nodes.push(status);
+        }
+
+        const intro = inviteEl('p', 'text-muted small mb-2');
+        intro.appendChild(document.createTextNode('Link for '));
+        intro.appendChild(inviteEl('strong', '', name));
+        intro.appendChild(document.createTextNode(' — expires in '));
+        intro.appendChild(inviteEl('strong', '', '7 days'));
+        intro.appendChild(document.createTextNode(', single use.'));
+        nodes.push(intro);
+
+        const input = inviteEl('input', 'form-control form-control-sm font-monospace');
+        input.type = 'text';
+        input.id = 'inviteLinkInput';
+        input.value = body.link;
+        input.readOnly = true;
+
+        const copyLabel = inviteEl('span', '', 'Copy');
+        const copyBtn = inviteEl('button', 'btn btn-outline-secondary btn-sm');
+        copyBtn.type = 'button';
+        copyBtn.appendChild(inviteEl('i', 'ti ti-copy me-1'));
+        copyBtn.appendChild(copyLabel);
+        let copyTimer = null;
+        copyBtn.addEventListener('click', function () {
+            input.select();
+            let copied = false;
+            try { copied = document.execCommand('copy'); } catch (e) { copied = false; }
+            copyLabel.textContent = copied ? 'Copied' : 'Copy failed';
+            clearTimeout(copyTimer);
+            copyTimer = setTimeout(function () { copyLabel.textContent = 'Copy'; }, 2000);
+        });
+
+        const group = inviteEl('div', 'input-group mb-0');
+        group.appendChild(input);
+        group.appendChild(copyBtn);
+        nodes.push(group);
+
+        const hint = inviteEl('p', 'text-muted mt-2 mb-0');
+        hint.style.fontSize = '.75rem';
+        hint.appendChild(inviteEl('i', 'ti ti-brand-whatsapp me-1'));
+        hint.appendChild(document.createTextNode('Paste this link in WhatsApp, Slack, or any channel.'));
+        nodes.push(hint);
+
+        const done = inviteEl('button', 'btn btn-sm text-white flex-grow-1', 'Done');
+        done.type = 'button';
+        done.style.background = 'var(--wb-maroon)';
+        done.setAttribute('data-bs-dismiss', 'modal');
+
+        const another = inviteEl('button', 'btn btn-sm btn-outline-secondary', 'Invite another person');
+        another.type = 'button';
+        another.addEventListener('click', resetInviteModal);
+
+        const actions = inviteEl('div', 'd-flex gap-2 mt-3');
+        actions.appendChild(done);
+        actions.appendChild(another);
+        nodes.push(actions);
+
+        showInviteResult(nodes);
+    }
+
+    function doInviteFetch(payload, email, name, sendEmail) {
         fetch('{{ route("org-admin.invite") }}', {
             method: 'POST',
             headers: {
@@ -545,99 +830,21 @@
             },
             body: JSON.stringify(payload),
         })
-        .then(r => r.json())
-        .then(data => {
-            if (emailBtn) { emailBtn.disabled = false; copyBtn.disabled = false; }
-            document.getElementById('inviteBtnText').textContent     = 'Send invite email';
-            document.getElementById('inviteCopyBtnText').textContent = 'Copy link instead';
-            document.getElementById('inviteBtnSpinner').style.display     = 'none';
-            document.getElementById('inviteCopyBtnSpinner').style.display = 'none';
-
-            document.getElementById('inviteFormStep').style.display   = 'none';
-            document.getElementById('inviteModalFooter').style.display = 'none';
-            document.getElementById('inviteLinkStep').style.display   = '';
-
-            if (data.error) {
-                document.getElementById('inviteLinkResult').innerHTML =
-                    `<div class="alert alert-danger"><i class="ti ti-alert-circle me-2"></i>${data.error}</div>
-                     <button class="btn btn-sm btn-outline-secondary mt-2" onclick="resetInviteModal()">Try again</button>`;
+        .then(r => r.json().catch(() => null).then(body => ({ ok: r.ok, body: body })))
+        .then(function (result) {
+            finishInviteRequest();
+            const body = result.body;
+            if (!result.ok || !body || body.error || typeof body.link !== 'string' || body.link === '') {
+                showInviteError(inviteErrorMessage(body));
                 return;
             }
-
-            if (data.type === 'confirm_existing') {
-                document.getElementById('inviteLinkResult').innerHTML =
-                    `<div class="alert alert-warning py-2 mb-3">
-                         <i class="ti ti-user-check me-1"></i>
-                         <strong>${data.user_name}</strong> already has a Wisselbanken account.
-                         Adding them will assign the <strong>${data.role_name}</strong> role to their account immediately.
-                     </div>
-                     <p class="text-muted small mb-3">No invite email will be sent — they already have access. Continue?</p>
-                     <div class="d-flex gap-2">
-                         <button class="btn btn-sm text-white flex-grow-1" style="background:#6b1c1c"
-                             onclick="confirmExistingAssign('${email}', '${name}', ${JSON.stringify(payload.role_id)})">
-                             Yes, add them
-                         </button>
-                         <button class="btn btn-sm btn-outline-secondary" onclick="resetInviteModal()">Cancel</button>
-                     </div>`;
-                return;
-            }
-
-            if (data.type === 'existing') {
-                document.getElementById('inviteLinkResult').innerHTML =
-                    `<div class="alert alert-success"><i class="ti ti-check me-2"></i>${data.message}</div>
-                     <p class="text-muted small mb-0">They can now log in and switch to this organization.</p>`;
-            } else {
-                const link = data.link;
-
-                let statusHtml = '';
-                if (sendEmail) {
-                    statusHtml = data.email_sent
-                        ? `<div class="alert alert-success py-2 mb-3">
-                               <i class="ti ti-mail-check me-1"></i>
-                               Invite email sent to <strong>${email}</strong>
-                           </div>`
-                        : `<div class="alert alert-warning py-2 mb-3">
-                               <i class="ti ti-alert-triangle me-1"></i>
-                               Email could not be delivered — copy the link below and send it manually.
-                           </div>`;
-                }
-
-                document.getElementById('inviteLinkResult').innerHTML =
-                    `${statusHtml}
-                     <p class="text-muted small mb-2">
-                         Link for <strong>${name}</strong> — expires in <strong>7 days</strong>, single use.
-                     </p>
-                     <div class="input-group mb-0">
-                         <input type="text" id="inviteLinkInput" class="form-control form-control-sm font-monospace" value="${link}" readonly>
-                         <button class="btn btn-outline-secondary btn-sm" onclick="copyInviteLink()">
-                             <i class="ti ti-copy"></i> Copy
-                         </button>
-                     </div>
-                     <p class="text-muted mt-2 mb-0" style="font-size:.75rem">
-                         <i class="ti ti-brand-whatsapp me-1"></i>Paste this link in WhatsApp, Slack, or any channel.
-                     </p>`;
-            }
+            showInviteSuccess(body, email, name, sendEmail);
         })
-        .catch(() => {
-            if (emailBtn) { emailBtn.disabled = false; copyBtn.disabled = false; }
-            document.getElementById('inviteBtnText').textContent     = 'Send invite email';
-            document.getElementById('inviteCopyBtnText').textContent = 'Copy link instead';
-            document.getElementById('inviteBtnSpinner').style.display     = 'none';
-            document.getElementById('inviteCopyBtnSpinner').style.display = 'none';
-            alert('Something went wrong. Please try again.');
+        .catch(function () {
+            finishInviteRequest();
+            showInviteError(INVITE_GENERIC_ERROR);
         });
     }
-
-    window.confirmExistingAssign = function(email, name, roleId) {
-        doInviteFetch({ email, name, role_id: roleId, confirmed: true }, null, null, email, name, false);
-    };
-
-    window.copyInviteLink = function() {
-        const input = document.getElementById('inviteLinkInput');
-        input.select();
-        document.execCommand('copy');
-        alert('Link copied to clipboard!');
-    };
 
     // ── Role filter ─────────────────────────────────────────────────────────
     window.filterMembers = function() {

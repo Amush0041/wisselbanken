@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Project;
 use App\Models\Quote;
 use App\Models\QuoteItem;
+use App\Models\Rbac\ProjectMember;
 use App\Models\SavedList;
 use App\Models\SavedListItem;
 use App\Models\UserProductPrice;
@@ -298,6 +299,8 @@ class QuoteController extends Controller
             ->where('user_id', Auth::id())
             ->firstOrFail();
 
+        ProjectMember::enrolCreator($project, (int) Auth::id());
+
         // Create quote
         $quote = Quote::create([
             'user_id' => Auth::id(),
@@ -394,6 +397,8 @@ class QuoteController extends Controller
 
         $subtitle = trim((string) $request->input('project_name', ''));
         $projectName = $subtitle !== '' ? $subtitle : $estimateLabel;
+
+        ProjectMember::enrolCreator($project, (int) Auth::id());
 
         $quote = Quote::create([
             'user_id' => Auth::id(),
@@ -627,6 +632,8 @@ class QuoteController extends Controller
     public function duplicate($id)
     {
         $originalQuote = $this->writableQuote($id, 'O', ['items']);
+
+        ProjectMember::enrolCreator($originalQuote->project, (int) Auth::id());
 
         $newQuote = Quote::create([
             'user_id' => Auth::id(),

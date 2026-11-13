@@ -284,7 +284,7 @@ class PhaseARegressionTest extends ProjectTestCase
 
         $r = $this->assignVia($this->ownerA, $member->id, 'organization_owner')->assertOk();
 
-        $this->assertSame(['success', 'message', 'peel_off_candidate', 'role_id', 'role_name'], array_keys($r->json()));
+        $this->assertSame(['success', 'message', 'peel_off_candidate', 'peel_off_last_role', 'role_id', 'role_name'], array_keys($r->json()));
         $this->assertSame('Assigned Organization Owner.', $r->json('message'));
         $this->assertTrue($r->json('peel_off_candidate'));
 
@@ -345,13 +345,13 @@ class PhaseARegressionTest extends ProjectTestCase
         ])->assertOk()->assertJson(['type' => 'invite', 'email_sent' => true]);
 
         $token = DB::table('org_invites')->where('email', 'new.hire@example.test')->value('token');
-        $this->assertSame(url("/register/invite/$token"), $r->json('link'));
+        $this->assertSame(url("/invite/$token"), $r->json('link'));
         Mail::assertSent(OrgInviteMail::class, fn ($m) => $m->hasTo('new.hire@example.test')
-            && $m->existingAccount === false && $m->inviteUrl === url("/register/invite/$token"));
+            && $m->inviteUrl === url("/invite/$token"));
 
         $this->app['auth']->forgetGuards();
         $this->get($r->json('link'))->assertOk()->assertSee('Procurement Coordinator');
-        $this->post($r->json('link'), ['name' => 'New Hire', 'password' => 'password123', 'password_confirmation' => 'password123'])
+        $this->post(url("/register/invite/$token"), ['name' => 'New Hire', 'password' => 'password123', 'password_confirmation' => 'password123'])
             ->assertRedirect(route('user.dashboard'))
             ->assertSessionHas(config('rbac.current_org_session_key'), $this->orgA->id);
 
@@ -367,12 +367,13 @@ class PhaseARegressionTest extends ProjectTestCase
         $mfr = Organization::create(['name' => 'Mfr', 'org_type' => 'manufacturer', 'team_size' => 'solo']);
         $owner = $this->mkUser($mfr, 'manufacturer_admin');
 
-        $r = $this->as($owner, 'POST', 'org-admin/invite', [
+        $this->as($owner, 'POST', 'org-admin/invite', [
             'email' => 'rep@example.test', 'name' => 'Rep', 'role_id' => $this->roleId('sales_rep'),
         ], $mfr->id)->assertOk();
 
         $this->app['auth']->forgetGuards();
-        $this->post($r->json('link'), ['name' => 'Rep', 'password' => 'password123', 'password_confirmation' => 'password123'])
+        $token = DB::table('org_invites')->where('email', 'rep@example.test')->value('token');
+        $this->post(url("/register/invite/$token"), ['name' => 'Rep', 'password' => 'password123', 'password_confirmation' => 'password123'])
             ->assertRedirect(route('user.dashboard'));
         $this->assertTrue($this->holds(User::where('email', 'rep@example.test')->first(), $mfr->id, 'sales_rep'));
     }

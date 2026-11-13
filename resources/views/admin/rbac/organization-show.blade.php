@@ -75,7 +75,7 @@
                                             <form action="{{ route('admin.rbac.roles.remove', $assignment->id) }}" method="POST" class="d-inline">
                                                 @csrf @method('DELETE')
                                                 <button class="btn btn-text-danger btn-sm p-0 ms-1" title="Remove"
-                                                    onclick="return confirm('Remove {{ $assignment->role->name }} from {{ $member->name }}?')">&times;</button>
+                                                    onclick="return confirm(@js('Remove ' . $assignment->role->name . ' from ' . $member->name . '?'))">&times;</button>
                                             </form>
                                         </span>
                                     @empty

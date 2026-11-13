@@ -1,8 +1,8 @@
 # Audit pack: routes and permission map
 
-Generated from branch `feature/client-audit-2-fixes` (base `release/1.1-prod`, commit d5efe32, plus the client audit 2 Phase A changes and Phase B batch 1: no route was added or removed and the map is unchanged; the only difference in `route-list.json` is the `throttle:20,1` middleware on POST org-admin/connections).
+Generated from branch `feature/client-audit-2-fixes` (base `release/1.1-prod`, commit d5efe32, plus the client audit 2 Phase A changes and Phase B batch 1: no route was added or removed and the map is unchanged; the only difference in `route-list.json` is the `throttle:20,1` middleware on POST org-admin/connections). Round 2 of client audit 2 adds the guest route `GET invite/{token}` (name `invite.entry`, no `auth` middleware, therefore not in the permission map and not in the "not in the map" table below, which lists authenticated routes only); the map is unchanged.
 
-- `route-list.json`: output of `php artisan route:list --json` (293 routes: method, URI, name, action, middleware).
+- `route-list.json`: output of `php artisan route:list --json` (294 routes: method, URI, name, action, middleware).
 - `route_permission_map.php`: a copy of `config/route_permission_map.php`. Key is `"METHOD uri"`; value is `[permission group, required level, batch, optional project_param / quote_param]`.
 
 ## How to diff them
